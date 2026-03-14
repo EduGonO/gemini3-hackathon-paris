@@ -104,7 +104,7 @@ export default function Home() {
       setDebug((prev) => ({ ...prev, parseStatus: "pending" }));
 
       // TODO: swap for parseWithGemini(text) once /api/parse is ready
-      const parsedScenes = parseScenesFallback(text);
+      const { scenes: parsedScenes, characters: parsedChars } = parseScenesFallback(text);
 
       log(`parsed ${parsedScenes.length} scenes`);
       setDebug((prev) => ({
@@ -114,7 +114,7 @@ export default function Home() {
       }));
 
       setScenes(parsedScenes);
-      setCharacters([]);
+      setCharacters(parsedChars);
       setState("ready");
     } catch (err: any) {
       const msg = err?.message ?? "Unknown error";
