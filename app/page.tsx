@@ -128,7 +128,7 @@ export default function Home() {
     <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-4">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini filmmaker</h1>
+        <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini3 hackathon paris - edu</h1>
         <div className="flex gap-2">
           {state === "ready" && (
             <button

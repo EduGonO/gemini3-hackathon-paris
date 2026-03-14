@@ -73,7 +73,7 @@ export default function ScriptDisplay({ scenes, characters, title }: Props) {
     <div className="flex h-full min-h-0 gap-4">
 
       {/* LEFT — Scene list */}
-      <aside className="w-48 flex-shrink-0 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      <aside className="w-40 flex-shrink-0 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
         {title && (
           <div className="border-b px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wider truncate">
             {title}
@@ -175,7 +175,7 @@ export default function ScriptDisplay({ scenes, characters, title }: Props) {
       </main>
 
       {/* RIGHT — Scene info */}
-      <aside className="hidden w-64 flex-shrink-0 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm lg:block">
+      <aside className="hidden w-56 flex-shrink-0 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:block">
         {scene && (
           <div className="space-y-5 text-sm">
 
