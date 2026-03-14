@@ -53,8 +53,8 @@ export function buildProjectFromParsed(
 
   // Build characters
   const characters: Character[] = parsedChars.map((c) => ({
-    id: slug(c.canonicalName ?? c.name),
-    canonicalName: c.canonicalName ?? c.name,
+    id: slug(c.name),
+    canonicalName: c.name,
     aliases: [],
     actorName: c.actorName,
     actorEmail: c.actorEmail,
