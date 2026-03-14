@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { SceneData, Character, Location, TeamMember, FilmProject } from "@/types/schema";
 import ShootingCalendar from "@/components/ShootingCalendar";
+import WeatherForecast from "@/components/WeatherForecast";
+import LocationMap from "@/components/LocationMap";
 
 const TEAM_ROLES = [
   "Director", "1st AD", "2nd AD", "Script Supervisor",
@@ -48,8 +50,6 @@ interface Props {
   onUpdateSceneById: (id: string, patch: Partial<SceneData>) => void;
 }
 
-// ─── Inline edit field ────────────────────────────────────────────────────────────────────────────
-
 function EditField({ value, placeholder, type = "text", onSave }: {
   value?: string; placeholder?: string; type?: string; onSave: (v: string) => void;
 }) {
@@ -68,26 +68,20 @@ function EditField({ value, placeholder, type = "text", onSave }: {
   return (
     <button onClick={() => { setDraft(value ?? ""); setEditing(true); }}
       className="w-full text-left rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100 transition-colors group">
-      {value
-        ? <span>{value}</span>
-        : <span className="text-gray-300 italic">{placeholder ?? "—"}</span>}
+      {value ? <span>{value}</span> : <span className="text-gray-300 italic">{placeholder ?? "—"}</span>}
       <span className="ml-1 opacity-0 group-hover:opacity-100 text-[9px] text-gray-400">✎</span>
     </button>
   );
 }
 
-// ─── Section divider ────────────────────────────────────────────────────────────────────────────
-
 function SectionLabel({ label, action }: { label: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between pt-3 pb-1 border-t border-gray-100 first:border-t-0 first:pt-0">
+    <div className="flex items-center justify-between pt-3 pb-1.5 border-t border-gray-100 first:border-t-0 first:pt-0">
       <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">{label}</span>
       {action}
     </div>
   );
 }
-
-// ─── Character card ───────────────────────────────────────────────────────────────────────────────────
 
 function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
   char: Character; colorClass: string; allCharacters: Character[];
@@ -96,7 +90,6 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
   const [expanded, setExpanded] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
   const [mergeTarget, setMergeTarget] = useState("");
-
   return (
     <div className={`rounded-lg border p-2 text-xs ${colorClass}`}>
       <div className="flex items-center justify-between">
@@ -106,14 +99,12 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <button onClick={() => { setShowMerge((v) => !v); setExpanded(true); }} title="Merge"
-            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40 transition">⇄</button>
+            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">⇄</button>
           <button onClick={() => setExpanded((v) => !v)}
-            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40 transition">{expanded ? "▲" : "▼"}</button>
+            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">{expanded ? "▲" : "▼"}</button>
         </div>
       </div>
-
       <div className="opacity-50 mt-0.5 text-[10px]">{char.dialogueCount} lines · {char.sceneCount} scenes</div>
-
       {expanded && (
         <div className="mt-2 space-y-1.5 border-t border-current/10 pt-2">
           <EditField value={char.actorName} placeholder="actor name" onSave={(v) => onUpdate({ actorName: v })} />
@@ -138,8 +129,6 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
   );
 }
 
-// ─── Crew member row ──────────────────────────────────────────────────────────────────────────────────
-
 function CrewRow({ member, assigned, onToggle, onUpdate, onRemove }: {
   member: TeamMember; assigned: boolean;
   onToggle: () => void; onUpdate: (p: Partial<TeamMember>) => void; onRemove: () => void;
@@ -157,7 +146,7 @@ function CrewRow({ member, assigned, onToggle, onUpdate, onRemove }: {
         </div>
         <div className="flex gap-0.5 flex-shrink-0">
           <button onClick={() => setExpanded((v) => !v)} className="text-gray-300 hover:text-gray-500 text-[10px] px-1">{expanded ? "▲" : "▼"}</button>
-          <button onClick={onRemove} className="text-gray-300 hover:text-red-400 text-[10px] px-1 transition-colors">✕</button>
+          <button onClick={onRemove} className="text-gray-300 hover:text-red-400 text-[10px] px-1">✕</button>
         </div>
       </div>
       {expanded && (
@@ -171,29 +160,22 @@ function CrewRow({ member, assigned, onToggle, onUpdate, onRemove }: {
   );
 }
 
-// ─── Add crew form ────────────────────────────────────────────────────────────────────────────────
-
 function AddCrewForm({ onAdd }: { onAdd: (m: TeamMember) => void }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("Director");
-  const [email, setEmail] = useState("");
-  const [emailError, setEmailError] = useState(false);
-
+  const [name, setName] = useState(""); const [role, setRole] = useState("Director");
+  const [email, setEmail] = useState(""); const [emailError, setEmailError] = useState(false);
   function submit() {
     if (!name.trim()) return;
     if (!email.trim()) { setEmailError(true); return; }
     onAdd({ id: uid(), name: name.trim(), role, email: email.trim() });
     setName(""); setEmail(""); setEmailError(false); setOpen(false);
   }
-
   if (!open) return (
     <button onClick={() => setOpen(true)}
-      className="w-full rounded border border-dashed border-gray-200 py-1 text-[10px] text-gray-400 hover:border-gray-300 hover:text-gray-500 transition-colors">
+      className="w-full rounded border border-dashed border-gray-200 py-1 text-[10px] text-gray-400 hover:border-gray-300 hover:text-gray-500">
       + add crew
     </button>
   );
-
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 space-y-1.5 text-xs">
       <input placeholder="Name *" value={name} onChange={(e) => setName(e.target.value)}
@@ -215,8 +197,6 @@ function AddCrewForm({ onAdd }: { onAdd: (m: TeamMember) => void }) {
   );
 }
 
-// ─── Import modal ─────────────────────────────────────────────────────────────────────────────────
-
 function ImportModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => void; onClose: () => void }) {
   const [json, setJson] = useState(""); const [error, setError] = useState("");
   function handle() {
@@ -224,7 +204,7 @@ function ImportModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => voi
       const data = JSON.parse(json);
       const arr = Array.isArray(data) ? data : data.team ?? data.crew ?? data.people ?? [];
       if (!arr.length) { setError("No people found."); return; }
-      onImport(arr.map((item: any) => ({ id: uid(), name: item.name ?? "Unknown", role: item.role ?? "Other", email: item.email ?? undefined, phone: item.phone ?? undefined })));
+      onImport(arr.map((item: any) => ({ id: uid(), name: item.name ?? "Unknown", role: item.role ?? "Other", email: item.email ?? undefined })));
       onClose();
     } catch { setError("Invalid JSON"); }
   }
@@ -236,7 +216,6 @@ function ImportModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => voi
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
         <div className="p-4 space-y-3">
-          <p className="text-xs text-gray-500">Array with <code className="bg-gray-100 px-0.5 rounded">name</code>, <code className="bg-gray-100 px-0.5 rounded">role</code>, <code className="bg-gray-100 px-0.5 rounded">email</code> — or object with <code className="bg-gray-100 px-0.5 rounded">team</code>/<code className="bg-gray-100 px-0.5 rounded">crew</code> key.</p>
           <textarea value={json} onChange={(e) => { setJson(e.target.value); setError(""); }} rows={4}
             placeholder={'{"name":"Alice","role":"Director","email":"a@film.com"}'}
             className="w-full rounded border border-gray-300 px-3 py-2 text-xs font-mono outline-none focus:border-blue-400 resize-none" />
@@ -250,8 +229,6 @@ function ImportModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => voi
     </div>
   );
 }
-
-// ─── Main panel (no tabs — all sections stacked vertically) ───────────────────────────────────────────
 
 export default function SceneInfoPanel({
   scene, characters, allCharacters, location, team, film, allScenes,
@@ -274,10 +251,16 @@ export default function SceneInfoPanel({
 
   const effectiveCallTime = scene.callTime ?? film.defaultCallTime;
 
-  return (
-    <div className="h-full overflow-y-auto space-y-0 text-xs">
+  // Resolve weather/map inputs: prefer scene-specific, fall back to project
+  const weatherLocation = scene.locationOverride ?? location?.realWorldAddress ?? scene.locationName ?? film.generalLocation?.city;
+  const weatherDate = scene.shootingDate ?? film.shootingDateRange?.startDate;
+  const mapAddress = scene.locationOverride ?? location?.realWorldAddress ?? scene.locationName;
+  const mapFallback = film.generalLocation?.city;
 
-      {/* ── Scene header ── */}
+  return (
+    <div className="h-full overflow-y-auto space-y-0 text-xs pb-4">
+
+      {/* Scene header */}
       <div className="pb-3">
         <div className="flex gap-1 flex-wrap items-center">
           <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">{scene.setting}</span>
@@ -292,9 +275,17 @@ export default function SceneInfoPanel({
         )}
       </div>
 
-      {/* ── Cast ── */}
+      {/* Map */}
+      <SectionLabel label="Location" />
+      <LocationMap address={mapAddress} fallbackCity={mapFallback} />
+
+      {/* Weather */}
+      <SectionLabel label="Weather" />
+      <WeatherForecast location={weatherLocation} date={weatherDate} />
+
+      {/* Cast */}
       {characters.length > 0 && (
-        <div>
+        <>
           <SectionLabel label={`Cast · ${characters.length}`} />
           <div className="space-y-1.5">
             {characters.map((c, i) => (
@@ -304,63 +295,53 @@ export default function SceneInfoPanel({
                 onMerge={onMergeCharacters} />
             ))}
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── Crew ── */}
-      <div>
-        <SectionLabel
-          label={`Crew · ${team.length}`}
-          action={
-            <button onClick={() => setShowImport(true)} className="text-[9px] text-gray-400 hover:text-blue-500 transition-colors">↓ import</button>
-          }
-        />
-        <div className="space-y-1.5">
-          {team.map((m) => (
-            <CrewRow key={m.id} member={m} assigned={assignedCrew.includes(m.id)}
-              onToggle={() => toggleCrew(m.id)}
-              onUpdate={(p) => onUpdateTeamMember(m.id, p)}
-              onRemove={() => onRemoveTeamMember(m.id)} />
-          ))}
-          <AddCrewForm onAdd={onAddTeamMember} />
+      {/* Crew */}
+      <SectionLabel label={`Crew · ${team.length}`}
+        action={<button onClick={() => setShowImport(true)} className="text-[9px] text-gray-400 hover:text-blue-500">↓ import</button>}
+      />
+      <div className="space-y-1.5">
+        {team.map((m) => (
+          <CrewRow key={m.id} member={m} assigned={assignedCrew.includes(m.id)}
+            onToggle={() => toggleCrew(m.id)}
+            onUpdate={(p) => onUpdateTeamMember(m.id, p)}
+            onRemove={() => onRemoveTeamMember(m.id)} />
+        ))}
+        <AddCrewForm onAdd={onAddTeamMember} />
+      </div>
+
+      {/* Scene details */}
+      <SectionLabel label="Scene" />
+      <div className="space-y-1.5">
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">shooting date</div>
+          <EditField value={scene.shootingDate} placeholder="YYYY-MM-DD" type="date" onSave={(v) => onUpdateScene({ shootingDate: v || undefined })} />
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">
+            call time{!scene.callTime && film.defaultCallTime ? ` (default ${film.defaultCallTime})` : ""}
+          </div>
+          <EditField value={scene.callTime} placeholder={film.defaultCallTime ?? "HH:MM"} type="time" onSave={(v) => onUpdateScene({ callTime: v || undefined })} />
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">location</div>
+          <EditField
+            value={scene.locationOverride ?? location?.realWorldAddress}
+            placeholder={film.generalLocation?.city ?? "address or place"}
+            onSave={(v) => onUpdateScene({ locationOverride: v || undefined })}
+          />
+        </div>
+        <div>
+          <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">notes</div>
+          <EditField value={scene.notes} placeholder="add notes…" onSave={(v) => onUpdateScene({ notes: v })} />
         </div>
       </div>
 
-      {/* ── Scene details ── */}
-      <div>
-        <SectionLabel label="Scene" />
-        <div className="space-y-1.5">
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">shooting date</div>
-            <EditField value={scene.shootingDate} placeholder="YYYY-MM-DD" type="date" onSave={(v) => onUpdateScene({ shootingDate: v || undefined })} />
-          </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">
-              call time{!scene.callTime && film.defaultCallTime ? ` (default ${film.defaultCallTime})` : ""}
-            </div>
-            <EditField value={scene.callTime} placeholder={film.defaultCallTime ?? "HH:MM"} type="time" onSave={(v) => onUpdateScene({ callTime: v || undefined })} />
-          </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">location</div>
-            <EditField
-              value={scene.locationOverride ?? location?.realWorldAddress}
-              placeholder={film.generalLocation?.city ?? "address or place"}
-              onSave={(v) => onUpdateScene({ locationOverride: v || undefined })}
-            />
-          </div>
-          <div>
-            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">notes</div>
-            <EditField value={scene.notes} placeholder="add notes…" onSave={(v) => onUpdateScene({ notes: v })} />
-          </div>
-          <div className="text-[10px] text-gray-400 px-1.5">est. {fmt(scene.duration)}</div>
-        </div>
-      </div>
-
-      {/* ── Calendar ── */}
-      <div>
-        <SectionLabel label="Schedule" />
-        <ShootingCalendar film={film} scenes={allScenes} onUpdateScene={onUpdateSceneById} />
-      </div>
+      {/* Schedule */}
+      <SectionLabel label="Schedule" />
+      <ShootingCalendar film={film} scenes={allScenes} onUpdateScene={onUpdateSceneById} />
 
       {showImport && (
         <ImportModal onImport={(ms) => ms.forEach(onAddTeamMember)} onClose={() => setShowImport(false)} />

@@ -21,7 +21,6 @@ export default function Home() {
   const [showDebug, setShowDebug] = useState(false);
   const [debug, setDebug] = useState<DebugInfo>({ log: [] });
   const [currentScript, setCurrentScript] = useState<string | undefined>();
-
   const store = useProjectStore();
 
   function log(msg: string) {
@@ -48,9 +47,7 @@ export default function Home() {
   }
 
   async function processFile(file: File) {
-    setAppState("loading");
-    setError("");
-    setCurrentScript(undefined);
+    setAppState("loading"); setError(""); setCurrentScript(undefined);
     setDebug({ fileName: file.name, fileSize: file.size, fileType: file.type || "unknown", log: [] });
     log(`processing ${file.name}`);
     try {
@@ -69,7 +66,7 @@ export default function Home() {
         if (!res.ok) { const err = await res.text(); setDebug((prev) => ({ ...prev, ocrStatus: "error", error: err })); throw new Error(`OCR failed: ${res.status} ${err}`); }
         const data = await res.json();
         text = data.text ?? "";
-        log(`OCR ok — ${text.length} chars, ${data.pages} pages`);
+        log(`OCR ok — ${text.length} chars`);
         setDebug((prev) => ({ ...prev, ocrStatus: "ok", rawTextLength: text.length, rawTextPreview: text.slice(0, 400) }));
       } else {
         log("reading as plain text...");
@@ -81,26 +78,23 @@ export default function Home() {
       const msg = err?.message ?? "Unknown error";
       log(`ERROR: ${msg}`);
       setDebug((prev) => ({ ...prev, error: msg, ocrStatus: prev.ocrStatus === "pending" ? "error" : prev.ocrStatus, parseStatus: prev.parseStatus === "pending" ? "error" : prev.parseStatus }));
-      setError(msg);
-      setAppState("error");
+      setError(msg); setAppState("error");
     }
   }
 
   async function loadDemoScript(script: ScriptMeta) {
-    setAppState("loading");
-    setError("");
-    setCurrentScript(script.name);
+    setAppState("loading"); setError(""); setCurrentScript(script.name);
     setDebug({ fileName: script.filename, fileType: "demo script", log: [] });
     log(`loading: ${script.filename}`);
     try {
       const res = await fetch(script.path);
-      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
       const blob = await res.blob();
       log(`fetched ${(blob.size / 1024).toFixed(1)} KB`);
       setDebug((prev) => ({ ...prev, fileSize: blob.size }));
       let text = "";
       if (script.filename.endsWith(".pdf")) {
-        log("running OCR...");
+        log("OCR...");
         setDebug((prev) => ({ ...prev, ocrStatus: "pending" }));
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -123,14 +117,12 @@ export default function Home() {
       const msg = err?.message ?? "Unknown error";
       log(`ERROR: ${msg}`);
       setDebug((prev) => ({ ...prev, error: msg }));
-      setError(msg);
-      setAppState("error");
+      setError(msg); setAppState("error");
     }
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
+    e.preventDefault(); setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) processFile(file);
   }, []);
@@ -141,64 +133,55 @@ export default function Home() {
   };
 
   return (
-    <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-4">
+    <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-3">
 
       {/* Header */}
-      <div className="mb-2 flex items-center justify-between gap-4">
-
-        {/* Left: title + counts + settings */}
+      <div className="flex items-center justify-between gap-4 mb-1">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {appState === "ready" ? (
             <>
-              <h1 className="text-sm font-semibold tracking-tight text-gray-900 truncate capitalize">{title}</h1>
-              <span className="text-xs text-gray-400 flex-shrink-0">
+              <h1 className="text-sm font-semibold tracking-tight text-gray-900 truncate capitalize flex-shrink-0">{title}</h1>
+              <span className="text-[11px] text-gray-400 flex-shrink-0 hidden sm:block">
                 {scenes.length} scenes · {store.project.characters.length} chars · {store.project.locations.length} loc
               </span>
-              {/* Inline compact settings */}
-              <div className="flex-shrink-0">
-                <ProjectSettings film={store.project.film} onUpdate={store.updateFilm} />
-              </div>
             </>
           ) : (
             <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini3 hackathon paris - edu</h1>
           )}
         </div>
-
-        {/* Right: actions */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <ScriptSelector onLoad={loadDemoScript} currentScript={currentScript} />
           {appState === "ready" && (
             <>
-              <button
-                onClick={store.exportJSON}
+              <button onClick={store.exportJSON}
                 className="rounded px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-                title="Export project as JSON"
-              >↓ json</button>
-              <button
-                onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); }}
-                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300"
-              >new</button>
+                title="Export project JSON">↓ json</button>
+              <button onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); }}
+                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300">new</button>
             </>
           )}
-          <button
-            onClick={() => setShowDebug((v) => !v)}
-            className={`rounded px-3 py-1 text-xs transition-colors ${showDebug ? "bg-gray-800 text-green-400" : "bg-gray-200 text-gray-600 hover:bg-gray-300"}`}
-          >debug</button>
+          <button onClick={() => setShowDebug((v) => !v)}
+            className={`rounded px-3 py-1 text-xs transition-colors ${showDebug ? "bg-gray-800 text-green-400" : "bg-gray-200 text-gray-600 hover:bg-gray-300"}`}>
+            debug
+          </button>
         </div>
       </div>
+
+      {/* Project settings — always visible chip row when script loaded */}
+      {appState === "ready" && (
+        <div className="mb-2">
+          <ProjectSettings film={store.project.film} onUpdate={store.updateFilm} />
+        </div>
+      )}
 
       {/* Upload */}
       {(appState === "idle" || appState === "error") && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <h2 className="text-2xl font-light text-gray-800">Upload a screenplay</h2>
           <p className="text-sm text-gray-500">PDF, .fountain, or plain text</p>
-          <label
-            htmlFor="file"
-            onDrop={onDrop}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            className={`flex w-80 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 text-center transition-colors ${isDragging ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white hover:border-gray-400"}`}
-          >
+          <label htmlFor="file" onDrop={onDrop}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)}
+            className={`flex w-80 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 text-center transition-colors ${isDragging ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white hover:border-gray-400"}`}>
             <svg className="h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5V19a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 19v-2.5M16.5 12L12 7.5 7.5 12M12 7.5v9" />
             </svg>
@@ -209,7 +192,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Loading */}
       {appState === "loading" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <svg className="h-8 w-8 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
@@ -220,7 +202,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Viewer */}
       {appState === "ready" && scenes.length > 0 && (
         <div className="flex-1 min-h-0">
           <ScriptDisplay

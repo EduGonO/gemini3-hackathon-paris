@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { FilmProject, GeneralLocation, ShootingDateRange } from "@/types/schema";
 
 interface Props {
@@ -8,144 +8,138 @@ interface Props {
   onUpdate: (patch: Partial<FilmProject>) => void;
 }
 
-function InlineInput({
-  value, placeholder, type = "text", onSave,
+// Popover for editing a single field
+function SettingPopover({
+  trigger,
+  children,
 }: {
-  value?: string;
-  placeholder?: string;
-  type?: string;
-  onSave: (v: string) => void;
+  trigger: React.ReactNode;
+  children: (close: () => void) => React.ReactNode;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value ?? "");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-  if (editing) return (
-    <input
-      autoFocus
-      type={type}
-      value={draft}
-      placeholder={placeholder}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => { onSave(draft); setEditing(false); }}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { onSave(draft); setEditing(false); } }}
-      className="rounded border border-blue-300 bg-white px-1.5 py-0.5 text-xs outline-none w-28"
-    />
-  );
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
 
   return (
-    <button
-      onClick={() => { setDraft(value ?? ""); setEditing(true); }}
-      className="rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100 transition-colors group"
-    >
-      {value
-        ? <span>{value}</span>
-        : <span className="text-gray-400 italic">{placeholder}</span>
-      }
-    </button>
+    <div ref={ref} className="relative">
+      <div onClick={() => setOpen((v) => !v)} className="cursor-pointer">{trigger}</div>
+      {open && (
+        <div className="absolute top-full left-0 z-50 mt-1 rounded-xl border border-gray-200 bg-white shadow-xl p-3 min-w-[200px]">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact chip button
+function Chip({ icon, label, placeholder }: { icon: string; label?: string; placeholder: string }) {
+  return (
+    <div className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition-colors hover:border-gray-400 cursor-pointer select-none ${
+      label ? "border-gray-300 bg-white text-gray-700" : "border-gray-200 bg-gray-50 text-gray-400"
+    }`}>
+      <span>{icon}</span>
+      <span className="max-w-[120px] truncate">{label || placeholder}</span>
+    </div>
   );
 }
 
 export default function ProjectSettings({ film, onUpdate }: Props) {
-  const [expanded, setExpanded] = useState(false);
-
   const range = film.shootingDateRange;
   const loc = film.generalLocation;
-  const hasSettings = !!(range?.startDate || loc?.city || film.defaultCallTime);
 
   return (
-    <div className="mb-2">
-      {/* Compact summary row */}
-      <div className="flex items-center gap-2 text-[11px] text-gray-500 flex-wrap">
-        {range?.startDate && range?.endDate && (
-          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-600">
-            📅 {range.startDate} → {range.endDate}
-          </span>
-        )}
-        {loc?.city && (
-          <span className="rounded bg-green-50 px-1.5 py-0.5 text-green-600">
-            📍 {loc.city}{loc.address ? `, ${loc.address}` : ""}
-          </span>
-        )}
-        {film.defaultCallTime && (
-          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-600">
-            ⏰ call {film.defaultCallTime}
-          </span>
-        )}
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="ml-auto text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          {expanded ? "hide settings ▲" : (hasSettings ? "edit ✎" : "+ settings")}
-        </button>
-      </div>
+    <div className="flex items-center gap-1.5 flex-wrap">
 
-      {/* Expanded settings form */}
-      {expanded && (
-        <div className="mt-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-
-            {/* Shooting dates */}
-            <div className="col-span-2">
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">Shooting date range</div>
-              <div className="flex items-center gap-2">
-                <InlineInput
-                  type="date"
-                  value={range?.startDate}
-                  placeholder="start date"
-                  onSave={(v) => onUpdate({ shootingDateRange: { startDate: v, endDate: range?.endDate ?? v } })}
-                />
-                <span className="text-gray-400">→</span>
-                <InlineInput
-                  type="date"
-                  value={range?.endDate}
-                  placeholder="end date"
-                  onSave={(v) => onUpdate({ shootingDateRange: { startDate: range?.startDate ?? v, endDate: v } })}
-                />
-              </div>
-            </div>
-
-            {/* General location */}
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">City</div>
-              <InlineInput
-                value={loc?.city}
-                placeholder="Paris"
-                onSave={(v) => onUpdate({ generalLocation: { ...loc, city: v } as GeneralLocation })}
-              />
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">Address</div>
-              <InlineInput
-                value={loc?.address}
-                placeholder="optional address"
-                onSave={(v) => onUpdate({ generalLocation: { city: loc?.city ?? "", ...loc, address: v } })}
-              />
-            </div>
-
-            {/* Default call time */}
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">Default call time</div>
-              <InlineInput
-                type="time"
-                value={film.defaultCallTime}
-                placeholder="07:00"
-                onSave={(v) => onUpdate({ defaultCallTime: v })}
-              />
-            </div>
-
-            {/* Author */}
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">Author</div>
-              <InlineInput
-                value={film.author || undefined}
-                placeholder="writer name"
-                onSave={(v) => onUpdate({ author: v })}
-              />
-            </div>
-
+      {/* Date range */}
+      <SettingPopover
+        trigger={
+          <Chip
+            icon="📅"
+            label={range?.startDate && range?.endDate ? `${range.startDate} → ${range.endDate}` : undefined}
+            placeholder="shooting dates"
+          />
+        }
+      >
+        {(close) => (
+          <div className="space-y-2 text-xs">
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold">Shooting dates</div>
+            <label className="block">
+              <div className="text-[10px] text-gray-500 mb-0.5">Start</div>
+              <input type="date" defaultValue={range?.startDate}
+                onChange={(e) => onUpdate({ shootingDateRange: { startDate: e.target.value, endDate: range?.endDate ?? e.target.value } })}
+                className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+            </label>
+            <label className="block">
+              <div className="text-[10px] text-gray-500 mb-0.5">End</div>
+              <input type="date" defaultValue={range?.endDate}
+                onChange={(e) => onUpdate({ shootingDateRange: { startDate: range?.startDate ?? e.target.value, endDate: e.target.value } })}
+                className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+            </label>
+            <button onClick={close} className="w-full rounded bg-gray-900 px-2 py-1 text-[11px] text-white hover:bg-gray-700">done</button>
           </div>
-        </div>
-      )}
+        )}
+      </SettingPopover>
+
+      {/* Location */}
+      <SettingPopover
+        trigger={
+          <Chip
+            icon="📍"
+            label={loc?.city ? `${loc.city}${loc.address ? `, ${loc.address}` : ""}` : undefined}
+            placeholder="location"
+          />
+        }
+      >
+        {(close) => (
+          <div className="space-y-2 text-xs">
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold">General location</div>
+            <label className="block">
+              <div className="text-[10px] text-gray-500 mb-0.5">City</div>
+              <input type="text" defaultValue={loc?.city} placeholder="Paris"
+                onBlur={(e) => onUpdate({ generalLocation: { city: e.target.value, address: loc?.address } as GeneralLocation })}
+                onKeyDown={(e) => { if (e.key === "Enter") { onUpdate({ generalLocation: { city: (e.target as HTMLInputElement).value, address: loc?.address } as GeneralLocation }); close(); } }}
+                className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+            </label>
+            <label className="block">
+              <div className="text-[10px] text-gray-500 mb-0.5">Address</div>
+              <input type="text" defaultValue={loc?.address} placeholder="optional"
+                onBlur={(e) => onUpdate({ generalLocation: { city: loc?.city ?? "", address: e.target.value } })}
+                className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+            </label>
+            <button onClick={close} className="w-full rounded bg-gray-900 px-2 py-1 text-[11px] text-white hover:bg-gray-700">done</button>
+          </div>
+        )}
+      </SettingPopover>
+
+      {/* Call time */}
+      <SettingPopover
+        trigger={
+          <Chip
+            icon="⏰"
+            label={film.defaultCallTime ? `call ${film.defaultCallTime}` : undefined}
+            placeholder="call time"
+          />
+        }
+      >
+        {(close) => (
+          <div className="space-y-2 text-xs">
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 font-semibold">Default call time</div>
+            <input type="time" defaultValue={film.defaultCallTime}
+              onChange={(e) => onUpdate({ defaultCallTime: e.target.value })}
+              className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+            <button onClick={close} className="w-full rounded bg-gray-900 px-2 py-1 text-[11px] text-white hover:bg-gray-700">done</button>
+          </div>
+        )}
+      </SettingPopover>
+
     </div>
   );
 }
