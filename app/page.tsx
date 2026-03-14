@@ -84,7 +84,7 @@ export default function Home() {
       log("parsing scenes...");
       setDebug((prev) => ({ ...prev, parseStatus: "pending" }));
 
-      const { scenes: parsedScenes, characters: parsedChars } = parseScenesFallback(text);
+      const { scenes: parsedScenes, characters: parsedChars, debugLog } = parseScenesFallback(text);
 
       log(`parsed ${parsedScenes.length} scenes, ${parsedChars.length} characters`);
       setDebug((prev) => ({
@@ -93,6 +93,7 @@ export default function Home() {
         sceneCount: parsedScenes.length,
         scenes: parsedScenes,
         characters: parsedChars,
+        debugLog,
       }));
 
       setScenes(parsedScenes);

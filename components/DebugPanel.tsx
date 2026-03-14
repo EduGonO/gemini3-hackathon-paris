@@ -17,6 +17,7 @@ export interface DebugInfo {
   // parsed data
   scenes?: Scene[];
   characters?: CharacterStats[];
+  debugLog?: import("@/lib/parseScript").ParseDebugEntry[];
 }
 
 interface Props {
@@ -208,6 +209,26 @@ export default function DebugPanel({ info, onClose }: Props) {
                     ))}
                   </div>
                 </section>
+
+                {/* Heading detection log */}
+                {info.debugLog && info.debugLog.length > 0 && (
+                  <section>
+                    <div className="text-gray-500 mb-1">— heading detection ({info.debugLog.length}) —</div>
+                    <div className="space-y-0.5 max-h-40 overflow-y-auto">
+                      {info.debugLog.map((entry, i) => (
+                        <div key={i} className="flex items-start gap-2 border-t border-gray-800 pt-0.5">
+                          <span className="text-gray-600 w-8 text-right flex-shrink-0">{entry.lineNumber}</span>
+                          <span className={`text-[10px] w-14 flex-shrink-0 ${entry.matched === "structural" ? "text-green-500" : "text-yellow-500"}`}>
+                            {entry.matched}
+                          </span>
+                          <span className="text-gray-400 text-[10px] flex-1 truncate" title={entry.line}>
+                            {entry.location}{entry.time ? ` · ${entry.time}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </>
             )}
           </div>
