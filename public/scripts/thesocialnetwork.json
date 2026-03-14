@@ -1,0 +1,217 @@
+{
+  "film": {
+    "id": "social-network-2010",
+    "title": "The Social Network",
+    "author": "Aaron Sorkin",
+    "format": "feature",
+    "logline": "The founding of Facebook and the lawsuits that followed.",
+    "totalScenes": 0,
+    "totalDuration": 0,
+    "shootingDateRange": {
+      "startDate": "2009-09-01",
+      "endDate": "2009-11-15"
+    },
+    "generalLocation": {
+      "city": "Los Angeles, CA",
+      "address": "Various Harvard / Boston locations"
+    },
+    "defaultCallTime": "07:00",
+    "createdAt": "2025-03-14T00:00:00.000Z",
+    "updatedAt": "2025-03-14T00:00:00.000Z"
+  },
+  "scenes": [],
+  "characters": [
+    {
+      "id": "mark",
+      "canonicalName": "MARK",
+      "aliases": ["MARK (V.O.)", "MARK (CONT'D)", "ZUCKERBERG"],
+      "actorName": "Jesse Eisenberg",
+      "actorEmail": "jesse.eisenberg@example.com",
+      "actorPhone": "",
+      "notes": "Lead. All deposition scenes.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "eduardo",
+      "canonicalName": "EDUARDO",
+      "aliases": ["EDUARDO (V.O.)", "SAVERIN"],
+      "actorName": "Andrew Garfield",
+      "actorEmail": "andrew.garfield@example.com",
+      "actorPhone": "",
+      "notes": "Co-founder. CFO.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "erica",
+      "canonicalName": "ERICA",
+      "aliases": [],
+      "actorName": "Rooney Mara",
+      "actorEmail": "rooney.mara@example.com",
+      "actorPhone": "",
+      "notes": "Opening scene. Breakup catalyst.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "sean",
+      "canonicalName": "SEAN",
+      "aliases": ["PARKER"],
+      "actorName": "Justin Timberlake",
+      "actorEmail": "justin.timberlake@example.com",
+      "actorPhone": "",
+      "notes": "Napster founder. Disruptive presence.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "cameron",
+      "canonicalName": "CAMERON",
+      "aliases": ["CAMERON WINKLEVOSS"],
+      "actorName": "Armie Hammer",
+      "actorEmail": "armie.hammer@example.com",
+      "actorPhone": "",
+      "notes": "Winklevoss twin. Rower.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "tyler",
+      "canonicalName": "TYLER",
+      "aliases": ["TYLER WINKLEVOSS"],
+      "actorName": "Armie Hammer",
+      "actorEmail": "armie.hammer@example.com",
+      "actorPhone": "",
+      "notes": "Winklevoss twin. Also rower.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "divya",
+      "canonicalName": "DIVYA",
+      "aliases": ["NARENDRA"],
+      "actorName": "Max Minghella",
+      "actorEmail": "max.minghella@example.com",
+      "actorPhone": "",
+      "notes": "Winklevoss business partner.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    },
+    {
+      "id": "marylin",
+      "canonicalName": "MARYLIN",
+      "aliases": [],
+      "actorName": "Rashida Jones",
+      "actorEmail": "rashida.jones@example.com",
+      "actorPhone": "",
+      "notes": "Eduardo's attorney.",
+      "sceneCount": 0,
+      "dialogueCount": 0,
+      "scenes": []
+    }
+  ],
+  "locations": [
+    {
+      "id": "harvard-bar",
+      "scriptName": "HARVARD BAR",
+      "displayName": "Thirsty Scholar Pub",
+      "realWorldAddress": "70 Boylston St, Boston, MA 02130",
+      "notes": "Opening scene",
+      "sceneCount": 0,
+      "sceneNumbers": []
+    },
+    {
+      "id": "mark-s-dorm-room",
+      "scriptName": "MARK'S DORM ROOM",
+      "displayName": "Kirkland House, Harvard",
+      "realWorldAddress": "95 Dunster St, Cambridge, MA 02138",
+      "notes": "Facemash hacking sequence",
+      "sceneCount": 0,
+      "sceneNumbers": []
+    },
+    {
+      "id": "facebook-office",
+      "scriptName": "FACEBOOK OFFICE",
+      "displayName": "Facebook HQ (2004)",
+      "realWorldAddress": "819 Emerson St, Palo Alto, CA 94301",
+      "notes": "Palo Alto era",
+      "sceneCount": 0,
+      "sceneNumbers": []
+    },
+    {
+      "id": "henley-royal-regatta",
+      "scriptName": "HENLEY ROYAL REGATTA",
+      "displayName": "Henley-on-Thames",
+      "realWorldAddress": "Henley-on-Thames, Oxfordshire, UK",
+      "notes": "Rowing sequence",
+      "sceneCount": 0,
+      "sceneNumbers": []
+    }
+  ],
+  "team": [
+    {
+      "id": "fincher",
+      "name": "David Fincher",
+      "role": "Director",
+      "email": "david.fincher@example.com",
+      "phone": "",
+      "notes": "Director"
+    },
+    {
+      "id": "chaffin",
+      "name": "Ceán Chaffin",
+      "role": "Producer",
+      "email": "cean.chaffin@example.com",
+      "phone": "",
+      "notes": "Producer"
+    },
+    {
+      "id": "cronenweth",
+      "name": "Jeff Cronenweth",
+      "role": "Director of Photography",
+      "email": "jeff.cronenweth@example.com",
+      "phone": "",
+      "notes": "DP. Known for Fight Club and Gone Girl with Fincher."
+    },
+    {
+      "id": "baxter",
+      "name": "Kirk Baxter",
+      "role": "Editor",
+      "email": "kirk.baxter@example.com",
+      "phone": "",
+      "notes": "Won Academy Award for this film."
+    },
+    {
+      "id": "burt",
+      "name": "Donald Graham Burt",
+      "role": "Production Designer",
+      "email": "dgburt@example.com",
+      "phone": "",
+      "notes": "Production Designer"
+    },
+    {
+      "id": "reznor",
+      "name": "Trent Reznor",
+      "role": "Other",
+      "email": "trent.reznor@example.com",
+      "phone": "",
+      "notes": "Composer. Won Academy Award for score."
+    },
+    {
+      "id": "rossi",
+      "name": "Laray Mayfield",
+      "role": "Casting Director",
+      "email": "laray.mayfield@example.com",
+      "phone": "",
+      "notes": "Casting Director"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import GeminiChat from "@/components/GeminiChat";
 import CallsheetFallback from "@/components/CallsheetFallback";
 import type { ProjectState } from "@/types/schema";
@@ -13,18 +13,15 @@ interface Props {
   callsheetError?: string;
 }
 
-function CallsheetPanel({ project, onGenerate, generating, url, error, onShowFallback }: {
+function CallsheetPanel({ project, onGenerate, generating, url }: {
   project: ProjectState;
   onGenerate: () => void;
   generating: boolean;
   url?: string;
-  error?: string;
-  onShowFallback: () => void;
 }) {
   const { film, scenes, characters, team } = project;
   const scheduled = scenes.filter((s) => s.shootingDate).length;
   const withActors = characters.filter((c) => c.actorName).length;
-  const isMissingCredentials = error?.includes("GOOGLE_SERVICE_ACCOUNT") || error?.includes("service account");
 
   return (
     <div className="space-y-4">
@@ -75,7 +72,7 @@ function CallsheetPanel({ project, onGenerate, generating, url, error, onShowFal
             </svg>
             Generating…
           </>
-        ) : "📄 Generate Google Docs Callsheet"}
+        ) : "📄 Generate Callsheet"}
       </button>
 
       {url && (
@@ -89,29 +86,6 @@ function CallsheetPanel({ project, onGenerate, generating, url, error, onShowFal
           <span className="ml-auto text-green-600 flex-shrink-0">↗</span>
         </a>
       )}
-
-      {error && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-2">
-          <div className="text-xs font-medium text-amber-800">
-            {isMissingCredentials ? "Google Docs not configured" : "Generation failed"}
-          </div>
-          {isMissingCredentials ? (
-            <>
-              <p className="text-[11px] text-amber-700">
-                Set <code className="bg-amber-100 px-1 rounded">GOOGLE_SERVICE_ACCOUNT</code> in .env.local to enable Google Docs export.
-              </p>
-              <button
-                onClick={onShowFallback}
-                className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-50 transition-colors"
-              >
-                📋 View callsheet in browser instead
-              </button>
-            </>
-          ) : (
-            <p className="text-[11px] text-amber-600">{error}</p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -123,6 +97,13 @@ export default function AITools({
 }: Props) {
   const [tab, setTab] = useState<AITab>("chat");
   const [showFallback, setShowFallback] = useState(false);
+
+  // Silently open browser callsheet whenever Google Docs generation fails
+  useEffect(() => {
+    if (callsheetError) {
+      setShowFallback(true);
+    }
+  }, [callsheetError]);
 
   const tabBtn = (t: AITab, label: string) => (
     <button
@@ -166,8 +147,6 @@ export default function AITools({
             onGenerate={onGenerateCallsheet}
             generating={generatingCallsheet}
             url={callsheetUrl}
-            error={callsheetError}
-            onShowFallback={() => setShowFallback(true)}
           />
         )}
       </div>

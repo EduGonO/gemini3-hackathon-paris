@@ -8,8 +8,76 @@ import ProjectSettings from "@/components/ProjectSettings";
 import type { ScriptMeta } from "@/components/ScriptSelector";
 import { parseScenesFallback } from "@/lib/parseScript";
 import { buildProjectFromParsed, useProjectStore } from "@/lib/scriptStore";
+import type { ProjectState, Character } from "@/types/schema";
 
 type AppState = "idle" | "loading" | "ready" | "error";
+
+// Merge companion JSON metadata into a freshly parsed ProjectState.
+// Copies actor assignments, crew, film metadata, and location overrides
+// from the companion file into the parsed project. Parsed scene/character
+// structure is preserved; only enrichment fields are overwritten.
+function enrichProject(parsed: ProjectState, companion: ProjectState): ProjectState {
+  // Merge film metadata (only non-default fields)
+  const film = {
+    ...parsed.film,
+    author: companion.film.author || parsed.film.author,
+    logline: companion.film.logline,
+    shootingDateRange: companion.film.shootingDateRange,
+    generalLocation: companion.film.generalLocation,
+    defaultCallTime: companion.film.defaultCallTime,
+  };
+
+  // Merge actor data into parsed characters by canonical name matching
+  const companionCharMap = new Map(
+    companion.characters.map((c) => [c.canonicalName.toUpperCase(), c])
+  );
+  // Also index by aliases
+  for (const c of companion.characters) {
+    for (const alias of c.aliases) {
+      companionCharMap.set(alias.toUpperCase(), c);
+    }
+  }
+
+  const characters: Character[] = parsed.characters.map((pc) => {
+    const match = companionCharMap.get(pc.canonicalName.toUpperCase());
+    if (!match) return pc;
+    return {
+      ...pc,
+      actorName: match.actorName ?? pc.actorName,
+      actorEmail: match.actorEmail ?? pc.actorEmail,
+      actorPhone: match.actorPhone ?? pc.actorPhone,
+      notes: match.notes ?? pc.notes,
+      // Merge aliases without duplicating the canonical name
+      aliases: Array.from(new Set([
+        ...pc.aliases,
+        ...match.aliases.filter((a) => a.toUpperCase() !== pc.canonicalName.toUpperCase()),
+      ])),
+    };
+  });
+
+  // Merge location overrides by scriptName matching
+  const companionLocMap = new Map(
+    companion.locations.map((l) => [l.scriptName.toUpperCase(), l])
+  );
+  const locations = parsed.locations.map((pl) => {
+    const match = companionLocMap.get(pl.scriptName.toUpperCase());
+    if (!match) return pl;
+    return {
+      ...pl,
+      displayName: match.displayName ?? pl.displayName,
+      realWorldAddress: match.realWorldAddress ?? pl.realWorldAddress,
+      notes: match.notes ?? pl.notes,
+    };
+  });
+
+  return {
+    film,
+    scenes: parsed.scenes,
+    characters,
+    locations,
+    team: companion.team.length > 0 ? companion.team : parsed.team,
+  };
+}
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>("idle");
@@ -35,18 +103,41 @@ export default function Home() {
     return filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
   }
 
-  async function processText(text: string, sourceName: string) {
+  // Try to fetch a companion JSON file for a given script path (e.g. thesocialnetwork.json)
+  async function fetchCompanionJSON(scriptPath: string): Promise<ProjectState | null> {
+    const jsonPath = scriptPath.replace(/\.[^.]+$/, ".json");
+    try {
+      const res = await fetch(jsonPath);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data?.film) return null;
+      return data as ProjectState;
+    } catch { return null; }
+  }
+
+  async function processText(text: string, sourceName: string, companionPath?: string) {
     log(`parsing "${sourceName}"...`);
     setDebug((prev) => ({ ...prev, parseStatus: "pending" }));
     const { scenes: parsedScenes, characters: parsedChars, debugLog } = parseScenesFallback(text);
     const fileTitle = titleFromFilename(sourceName);
     log(`parsed ${parsedScenes.length} scenes, ${parsedChars.length} characters`);
-    const project = buildProjectFromParsed(parsedScenes, parsedChars, fileTitle);
+
+    let project = buildProjectFromParsed(parsedScenes, parsedChars, fileTitle);
+
+    // Enrich with companion JSON if available
+    if (companionPath) {
+      const companion = await fetchCompanionJSON(companionPath);
+      if (companion) {
+        log(`enriching with companion data (${companion.characters.length} chars, ${companion.team.length} crew)`);
+        project = enrichProject(project, companion);
+      }
+    }
+
     store.load(project);
     setDebug((prev) => ({ ...prev, parseStatus: "ok", sceneCount: parsedScenes.length, scenes: parsedScenes, characters: parsedChars, debugLog }));
     setScenes(parsedScenes);
     setCharacters(parsedChars);
-    setTitle(fileTitle);
+    setTitle(project.film.title || fileTitle);
     setAppState("ready");
   }
 
@@ -87,16 +178,17 @@ export default function Home() {
   }
 
   async function loadDemoScript(script: ScriptMeta) {
-    // Handle JSON project files directly
+    // JSON project files load directly into the store
     if (script.filename.endsWith(".json")) {
       setAppState("loading"); setCurrentScript(script.name);
       log(`loading project JSON: ${script.filename}`);
       try {
         const res = await fetch(script.path);
         if (!res.ok) throw new Error(`Failed: ${res.status}`);
-        const project = await res.json();
+        const project = await res.json() as ProjectState;
         store.load(project);
-        setScenes([]); setCharacters([]); setTitle(project.film?.title ?? script.name);
+        setScenes([]); setCharacters([]);
+        setTitle(project.film?.title ?? script.name);
         setAppState("ready");
       } catch (err: any) {
         setError(err.message ?? "Failed to load project"); setAppState("error");
@@ -133,7 +225,8 @@ export default function Home() {
         text = await blob.text();
         setDebug((prev) => ({ ...prev, ocrStatus: "ok (plaintext)", rawTextLength: text.length, rawTextPreview: text.slice(0, 400) }));
       }
-      await processText(text, script.filename);
+      // Pass the script path so processText can look for a companion JSON
+      await processText(text, script.filename, script.path);
     } catch (err: any) {
       const msg = err?.message ?? "Unknown error";
       log(`ERROR: ${msg}`);
@@ -157,6 +250,7 @@ export default function Home() {
       if (data.error) throw new Error(data.error);
       setCallsheetUrl(data.docUrl);
     } catch (err: any) {
+      // Set error — AITools will silently open the browser fallback
       setCallsheetError(err.message ?? "Failed to generate callsheet");
     } finally {
       setGeneratingCallsheet(false);
