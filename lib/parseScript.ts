@@ -2,7 +2,7 @@
 // Script parsing utility — integrates with Gemini API
 // Status: skeleton / in progress
 
-import type { Scene, CharacterStats } from "@/components/ScriptDisplay";
+import type { Scene, ScenePart, CharacterStats } from "@/components/ScriptDisplay";
 
 // --- Types ---
 
@@ -18,7 +18,6 @@ export interface ParseResult {
 /**
  * Send raw screenplay text to Gemini and get back structured scene data.
  * Uses responseMimeType: "application/json" for deterministic output.
- *
  * TODO: implement in /app/api/parse/route.ts
  */
 export async function parseWithGemini(text: string): Promise<ParseResult> {
@@ -27,9 +26,7 @@ export async function parseWithGemini(text: string): Promise<ParseResult> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
-
   if (!res.ok) throw new Error("Gemini parse failed");
-
   const data = await res.json();
   return data as ParseResult;
 }
@@ -39,8 +36,6 @@ export async function parseWithGemini(text: string): Promise<ParseResult> {
 /**
  * Extract raw text from a PDF file via /api/ocr.
  * Uses pdf-parse on the server side.
- *
- * TODO: implement in /app/api/ocr/route.ts
  */
 export async function extractTextFromPdf(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -61,67 +56,121 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   });
 }
 
-// --- Metadata extraction ---
-
-/**
- * Extract title and author from the first page of raw screenplay text.
- * Looks for "by <name>" line after the title.
- */
-export function extractMetadata(text: string): { title: string; author: string } {
-  const firstPage = text.split("\f")[0] ?? "";
-  const lines = firstPage.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const title = lines[0] ?? "Untitled";
-  const authorLine = lines.find((l) => /^by\s+/i.test(l));
-  const author = authorLine ? authorLine.replace(/^by\s+/i, "") : "Unknown";
-  return { title, author };
-}
-
 // --- Fallback: client-side regex parser ---
-// Used when Gemini API is unavailable (dev/offline mode)
+// Splits screenplay text into structured scenes with dialogue and direction parts.
 
 const HEADING_REGEX =
   /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.)\s*(.*)$/i;
 
+// A character cue: all-caps, short, trimmed — no lowercase letters
+function isCharacterCue(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (t !== t.toUpperCase()) return false;        // must be all caps
+  if (t.length > 40) return false;               // character names are short
+  if (/^(INT|EXT|CUT|FADE|THE|END)/.test(t)) return false; // exclude headings/directions
+  if (/[.]{2,}/.test(t)) return false;           // exclude "CONTINUED..." etc
+  return /^[A-Z]/.test(t);
+}
+
 /**
- * Minimal regex-based scene splitter.
- * Does NOT extract characters or dialogue — just splits on scene headings.
- * Good enough for a loading preview while Gemini processes.
+ * Regex-based scene and part splitter.
+ * Returns scenes with structured parts (dialogue vs direction).
+ * Good enough for a loading preview while Gemini is not yet wired up.
  */
 export function parseScenesFallback(text: string): Scene[] {
   const scenes: Scene[] = [];
   let current: Partial<Scene> | null = null;
-  let buffer: string[] = [];
+  let parts: ScenePart[] = [];
+  let directionBuffer: string[] = [];
+  let inDialogue = false;
+  let currentChar = "";
+  let dialogueBuffer: string[] = [];
 
-  const lines = text.split(/\r?\n/);
+  function flushDirection() {
+    const t = directionBuffer.join(" ").replace(/\s+/g, " ").trim();
+    if (t) parts.push({ type: "direction", text: t });
+    directionBuffer = [];
+  }
 
-  for (const rawLine of lines) {
-    const match = rawLine.match(HEADING_REGEX);
-    if (match) {
-      if (current) {
-        scenes.push({ ...current, rawText: buffer.join("\n").trim() } as Scene);
-      }
-      const afterSetting = match[4]?.trim() ?? "";
+  function flushDialogue() {
+    const t = dialogueBuffer.join(" ").replace(/\s+/g, " ").trim();
+    if (t && currentChar) parts.push({ type: "dialogue", character: currentChar, text: t });
+    dialogueBuffer = [];
+    currentChar = "";
+    inDialogue = false;
+  }
+
+  function finalizeScene() {
+    if (!current) return;
+    flushDialogue();
+    flushDirection();
+    // collect unique characters from dialogue parts
+    const chars = Array.from(
+      new Set(parts.filter((p): p is Extract<ScenePart, { type: "dialogue" }> => p.type === "dialogue").map((p) => p.character))
+    );
+    scenes.push({
+      ...(current as Scene),
+      parts,
+      characters: chars,
+      rawText: parts.map((p) => p.type === "dialogue" ? `${p.character}\n${p.text}` : p.text).join("\n"),
+    });
+  }
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trimEnd();
+    const headingMatch = line.match(HEADING_REGEX);
+
+    if (headingMatch) {
+      finalizeScene();
+      parts = [];
+      inDialogue = false;
+      currentChar = "";
+      directionBuffer = [];
+      dialogueBuffer = [];
+
+      const afterSetting = headingMatch[4]?.trim() ?? "";
       const dashIdx = afterSetting.lastIndexOf(" - ");
       const location = dashIdx !== -1 ? afterSetting.slice(0, dashIdx).trim() : afterSetting;
       const time = dashIdx !== -1 ? afterSetting.slice(dashIdx + 3).trim() : "";
+
       current = {
         sceneNumber: scenes.length + 1,
-        heading: `${match[3]} ${afterSetting}`.trim(),
-        setting: match[3].replace(/\.$/,  "").toUpperCase(),
+        heading: `${headingMatch[3]} ${afterSetting}`.trim(),
+        setting: headingMatch[3].replace(/\.$/, "").toUpperCase(),
         location,
         time,
-        characters: [],  // TODO: populated by Gemini
         duration: undefined,
       };
-      buffer = [];
-    } else if (current) {
-      buffer.push(rawLine);
+      continue;
+    }
+
+    if (!current) continue;
+
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      // blank line — flush dialogue if open
+      if (inDialogue) flushDialogue();
+      continue;
+    }
+
+    if (isCharacterCue(trimmed)) {
+      flushDialogue();
+      flushDirection();
+      inDialogue = true;
+      currentChar = trimmed;
+      dialogueBuffer = [];
+      continue;
+    }
+
+    if (inDialogue) {
+      dialogueBuffer.push(trimmed);
+    } else {
+      directionBuffer.push(trimmed);
     }
   }
 
-  if (current) {
-    scenes.push({ ...current, rawText: buffer.join("\n").trim() } as Scene);
-  }
-
+  finalizeScene();
   return scenes;
 }

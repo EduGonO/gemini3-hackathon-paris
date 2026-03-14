@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import ScriptDisplay, { Scene, CharacterStats } from "@/components/ScriptDisplay";
 import DebugPanel from "@/components/DebugPanel";
-import { parseScenesFallback, extractMetadata } from "@/lib/parseScript";
+import { parseScenesFallback } from "@/lib/parseScript";
 
 type AppState = "idle" | "loading" | "ready" | "error";
 
@@ -34,9 +34,16 @@ export default function Home() {
     setDebug((prev) => ({ ...prev, log: [...prev.log, `${new Date().toLocaleTimeString()} ${msg}`] }));
   }
 
+  // Extract clean title from filename (strip extension)
+  function titleFromFilename(filename: string): string {
+    return filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
+  }
+
   async function processFile(file: File) {
     setState("loading");
     setError("");
+    const fileTitle = titleFromFilename(file.name);
+    setTitle(fileTitle);
     setDebug({
       fileName: file.name,
       fileSize: file.size,
@@ -93,9 +100,6 @@ export default function Home() {
         }));
       }
 
-      log("extracting metadata...");
-      const { title: scriptTitle } = extractMetadata(text);
-
       log("parsing scenes (fallback regex)...");
       setDebug((prev) => ({ ...prev, parseStatus: "pending" }));
 
@@ -109,14 +113,18 @@ export default function Home() {
         sceneCount: parsedScenes.length,
       }));
 
-      setTitle(scriptTitle);
       setScenes(parsedScenes);
       setCharacters([]);
       setState("ready");
     } catch (err: any) {
       const msg = err?.message ?? "Unknown error";
       log(`ERROR: ${msg}`);
-      setDebug((prev) => ({ ...prev, error: msg, ocrStatus: prev.ocrStatus === "pending" ? "error" : prev.ocrStatus, parseStatus: prev.parseStatus === "pending" ? "error" : prev.parseStatus }));
+      setDebug((prev) => ({
+        ...prev,
+        error: msg,
+        ocrStatus: prev.ocrStatus === "pending" ? "error" : prev.ocrStatus,
+        parseStatus: prev.parseStatus === "pending" ? "error" : prev.parseStatus,
+      }));
       setError(msg);
       setState("error");
     }
@@ -204,7 +212,7 @@ export default function Home() {
       {state === "ready" && scenes.length > 0 && (
         <div className="flex flex-1 min-h-0 flex-col">
           <div className="mb-2">
-            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <h2 className="text-lg font-semibold text-gray-900 capitalize">{title}</h2>
             <p className="text-xs text-gray-500">{scenes.length} scenes detected</p>
           </div>
           <div className="flex-1 min-h-0">
