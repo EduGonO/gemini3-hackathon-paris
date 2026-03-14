@@ -152,8 +152,10 @@ export async function extractTextFromPdf(file: File): Promise<string> {
 }
 
 // --- Heading regex ---
+// Supports standard (INT./EXT.) and Spanish (INT - / EXT - ) formats.
+// Lookahead (?=[\s\-/]) prevents false matches on words like "INTERIOR".
 const HEADING_REGEX =
-  /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.)\s*(.*)$/i;
+  /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.|INT(?=[\s\-/])|EXT(?=[\s\-/]))\s*[-.]?\s*(.*)$/i;
 
 const CHAR_LINE_REGEX = /^\s{0,20}([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s'().-]+)$/;
 
@@ -275,20 +277,44 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
       directionLines = [];
 
       const afterSetting = headingMatch[4]?.trim() ?? "";
+      // Strip trailing scene number if present (e.g. "CAFE - NIGHT 12")
       const trailing = afterSetting.match(/(.*?)(\s*\d+)$/);
       const cleanedAfter = trailing ? trailing[1].trim() : afterSetting;
-      const dashIdx = cleanedAfter.lastIndexOf(" - ");
-      const location = dashIdx !== -1 ? cleanedAfter.slice(0, dashIdx).trim() : cleanedAfter;
-      const time = dashIdx !== -1 ? cleanedAfter.slice(dashIdx + 3).trim() : "";
+
+      // Spanish format uses " -- " to separate location from time (e.g. "SALA - TEPEJI 21 -- TARDE")
+      // Standard format uses " - " (e.g. "CAFE DE FLORE - NIGHT")
+      // Try double-dash first, then single-dash
+      let location = cleanedAfter;
+      let time = "";
+      const doubleDashIdx = cleanedAfter.lastIndexOf(" -- ");
+      const singleDashIdx = cleanedAfter.lastIndexOf(" - ");
+
+      if (doubleDashIdx !== -1) {
+        // Spanish: "SALA - TEPEJI 21 -- TARDE" → location="SALA - TEPEJI 21", time="TARDE"
+        location = cleanedAfter.slice(0, doubleDashIdx).trim();
+        time = cleanedAfter.slice(doubleDashIdx + 4).trim();
+      } else if (singleDashIdx !== -1) {
+        // Standard: "CAFE DE FLORE - NIGHT" → location="CAFE DE FLORE", time="NIGHT"
+        location = cleanedAfter.slice(0, singleDashIdx).trim();
+        time = cleanedAfter.slice(singleDashIdx + 3).trim();
+      }
+
+      // Normalize setting — strip leading dash/space that Spanish format may leave
+      const rawSetting = headingMatch[3].replace(/\.$/, "").trim().toUpperCase();
 
       current = {
         sceneNumber: scenes.length + 1,
-        heading: `${headingMatch[3]} ${cleanedAfter}`.trim(),
-        setting: headingMatch[3].replace(/\.$/, "").toUpperCase(),
+        heading: `${rawSetting} ${cleanedAfter}`.trim(),
+        setting: rawSetting,
         location,
         time,
         duration: undefined,
       };
+
+      if (process.env.NODE_ENV === "development") {
+        console.log(`[parseScript] scene ${scenes.length + 1}: setting="${rawSetting}" location="${location}" time="${time}"`);
+      }
+
       continue;
     }
 
