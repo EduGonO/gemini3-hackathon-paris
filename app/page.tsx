@@ -106,13 +106,16 @@ export default function Home() {
   // Try to fetch a companion JSON file for a given script path (e.g. thesocialnetwork.json)
   async function fetchCompanionJSON(scriptPath: string): Promise<ProjectState | null> {
     const jsonPath = scriptPath.replace(/\.[^.]+$/, ".json");
+    console.log("[companion] looking for:", jsonPath);
     try {
       const res = await fetch(jsonPath);
+      console.log("[companion] fetch status:", res.status, jsonPath);
       if (!res.ok) return null;
       const data = await res.json();
-      if (!data?.film) return null;
+      if (!data?.film) { console.log("[companion] invalid JSON structure"); return null; }
+      console.log("[companion] loaded:", data.film?.title, "—", data.characters?.length, "chars,", data.team?.length, "crew");
       return data as ProjectState;
-    } catch { return null; }
+    } catch (e) { console.log("[companion] fetch error:", e); return null; }
   }
 
   async function processText(text: string, sourceName: string, companionPath?: string) {
