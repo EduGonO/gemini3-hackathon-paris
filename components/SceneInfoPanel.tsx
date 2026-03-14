@@ -5,6 +5,8 @@ import type { SceneData, Character, Location, TeamMember, FilmProject } from "@/
 import ShootingCalendar from "@/components/ShootingCalendar";
 import WeatherForecast from "@/components/WeatherForecast";
 import LocationMap from "@/components/LocationMap";
+import GeminiChat from "@/components/GeminiChat";
+import type { ProjectState } from "@/types/schema";
 
 const TEAM_ROLES = [
   "Director", "1st AD", "2nd AD", "Script Supervisor",
@@ -40,6 +42,7 @@ interface Props {
   team: TeamMember[];
   film: FilmProject;
   allScenes: SceneData[];
+  project: ProjectState;
   onUpdateScene: (patch: Partial<SceneData>) => void;
   onUpdateCharacter: (id: string, patch: Partial<Character>) => void;
   onMergeCharacters: (keepId: string, mergeIds: string[]) => void;
@@ -48,6 +51,9 @@ interface Props {
   onUpdateTeamMember: (id: string, patch: Partial<TeamMember>) => void;
   onRemoveTeamMember: (id: string) => void;
   onUpdateSceneById: (id: string, patch: Partial<SceneData>) => void;
+  onGenerateCallsheet: () => void;
+  generatingCallsheet: boolean;
+  callsheetUrl?: string;
 }
 
 function EditField({ value, placeholder, type = "text", onSave }: {
@@ -98,10 +104,8 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
           {char.actorName && <span className="text-[10px] opacity-60 truncate">· {char.actorName}</span>}
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0">
-          <button onClick={() => { setShowMerge((v) => !v); setExpanded(true); }} title="Merge"
-            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">⇄</button>
-          <button onClick={() => setExpanded((v) => !v)}
-            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">{expanded ? "▲" : "▼"}</button>
+          <button onClick={() => { setShowMerge((v) => !v); setExpanded(true); }} title="Merge" className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">⇄</button>
+          <button onClick={() => setExpanded((v) => !v)} className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">{expanded ? "▲" : "▼"}</button>
         </div>
       </div>
       <div className="opacity-50 mt-0.5 text-[10px]">{char.dialogueCount} lines · {char.sceneCount} scenes</div>
@@ -118,8 +122,7 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
                   <option key={c.id} value={c.id}>{c.canonicalName}</option>
                 ))}
               </select>
-              <button disabled={!mergeTarget}
-                onClick={() => { onMerge(char.id, [mergeTarget]); setMergeTarget(""); setShowMerge(false); }}
+              <button disabled={!mergeTarget} onClick={() => { onMerge(char.id, [mergeTarget]); setMergeTarget(""); setShowMerge(false); }}
                 className="rounded bg-white/60 px-1.5 text-[10px] hover:bg-white/80 disabled:opacity-30 flex-shrink-0">⇄</button>
             </div>
           )}
@@ -137,8 +140,7 @@ function CrewRow({ member, assigned, onToggle, onUpdate, onRemove }: {
   return (
     <div className={`rounded-lg border p-2 text-xs transition-colors ${assigned ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-gray-50"}`}>
       <div className="flex items-center gap-2">
-        <input type="checkbox" checked={assigned} onChange={onToggle}
-          className="rounded border-gray-300 text-blue-500 cursor-pointer flex-shrink-0" />
+        <input type="checkbox" checked={assigned} onChange={onToggle} className="rounded border-gray-300 text-blue-500 cursor-pointer flex-shrink-0" />
         <div className="min-w-0 flex-1">
           <span className="font-medium text-gray-800">{member.name}</span>
           <span className="ml-1.5 text-[10px] text-gray-400">{member.role}</span>
@@ -171,17 +173,12 @@ function AddCrewForm({ onAdd }: { onAdd: (m: TeamMember) => void }) {
     setName(""); setEmail(""); setEmailError(false); setOpen(false);
   }
   if (!open) return (
-    <button onClick={() => setOpen(true)}
-      className="w-full rounded border border-dashed border-gray-200 py-1 text-[10px] text-gray-400 hover:border-gray-300 hover:text-gray-500">
-      + add crew
-    </button>
+    <button onClick={() => setOpen(true)} className="w-full rounded border border-dashed border-gray-200 py-1 text-[10px] text-gray-400 hover:border-gray-300 hover:text-gray-500">+ add crew</button>
   );
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 space-y-1.5 text-xs">
-      <input placeholder="Name *" value={name} onChange={(e) => setName(e.target.value)}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
-      <select value={role} onChange={(e) => setRole(e.target.value)}
-        className="w-full rounded border border-gray-300 px-2 py-1 text-xs bg-white outline-none">
+      <input placeholder="Name *" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
+      <select value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded border border-gray-300 px-2 py-1 text-xs bg-white outline-none">
         {TEAM_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
       </select>
       <div>
@@ -231,9 +228,10 @@ function ImportModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => voi
 }
 
 export default function SceneInfoPanel({
-  scene, characters, allCharacters, location, team, film, allScenes,
+  scene, characters, allCharacters, location, team, film, allScenes, project,
   onUpdateScene, onUpdateCharacter, onMergeCharacters, onUpdateLocation,
   onAddTeamMember, onUpdateTeamMember, onRemoveTeamMember, onUpdateSceneById,
+  onGenerateCallsheet, generatingCallsheet, callsheetUrl,
 }: Props) {
   const [showImport, setShowImport] = useState(false);
   const assignedCrew = scene.assignedCrew ?? [];
@@ -250,8 +248,6 @@ export default function SceneInfoPanel({
   }
 
   const effectiveCallTime = scene.callTime ?? film.defaultCallTime;
-
-  // Resolve weather/map inputs: prefer scene-specific, fall back to project
   const weatherLocation = scene.locationOverride ?? location?.realWorldAddress ?? scene.locationName ?? film.generalLocation?.city;
   const weatherDate = scene.shootingDate ?? film.shootingDateRange?.startDate;
   const mapAddress = scene.locationOverride ?? location?.realWorldAddress ?? scene.locationName;
@@ -320,18 +316,12 @@ export default function SceneInfoPanel({
           <EditField value={scene.shootingDate} placeholder="YYYY-MM-DD" type="date" onSave={(v) => onUpdateScene({ shootingDate: v || undefined })} />
         </div>
         <div>
-          <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">
-            call time{!scene.callTime && film.defaultCallTime ? ` (default ${film.defaultCallTime})` : ""}
-          </div>
+          <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">call time{!scene.callTime && film.defaultCallTime ? ` (default ${film.defaultCallTime})` : ""}</div>
           <EditField value={scene.callTime} placeholder={film.defaultCallTime ?? "HH:MM"} type="time" onSave={(v) => onUpdateScene({ callTime: v || undefined })} />
         </div>
         <div>
           <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">location</div>
-          <EditField
-            value={scene.locationOverride ?? location?.realWorldAddress}
-            placeholder={film.generalLocation?.city ?? "address or place"}
-            onSave={(v) => onUpdateScene({ locationOverride: v || undefined })}
-          />
+          <EditField value={scene.locationOverride ?? location?.realWorldAddress} placeholder={film.generalLocation?.city ?? "address or place"} onSave={(v) => onUpdateScene({ locationOverride: v || undefined })} />
         </div>
         <div>
           <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">notes</div>
@@ -342,6 +332,39 @@ export default function SceneInfoPanel({
       {/* Schedule */}
       <SectionLabel label="Schedule" />
       <ShootingCalendar film={film} scenes={allScenes} onUpdateScene={onUpdateSceneById} />
+
+      {/* Callsheet */}
+      <SectionLabel label="Callsheet" />
+      <div className="space-y-2">
+        <button
+          onClick={onGenerateCallsheet}
+          disabled={generatingCallsheet}
+          className="w-full rounded-xl border border-gray-300 bg-white py-2 text-xs font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {generatingCallsheet ? (
+            <>
+              <svg className="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              Generating…
+            </>
+          ) : (
+            <>📄 Generate Google Docs Callsheet</>
+          )}
+        </button>
+        {callsheetUrl && (
+          <a href={callsheetUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 hover:bg-green-100 transition-colors">
+            <span>✓</span>
+            <span className="truncate">Callsheet ready — open in Google Docs ↗</span>
+          </a>
+        )}
+      </div>
+
+      {/* Gemini */}
+      <SectionLabel label="Ask Gemini" />
+      <GeminiChat project={project} />
 
       {showImport && (
         <ImportModal onImport={(ms) => ms.forEach(onAddTeamMember)} onClose={() => setShowImport(false)} />
