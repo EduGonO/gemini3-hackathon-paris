@@ -5,17 +5,14 @@ import ScriptDisplay, { Scene, CharacterStats } from "@/components/ScriptDisplay
 import DebugPanel, { DebugInfo } from "@/components/DebugPanel";
 import ScriptSelector from "@/components/ScriptSelector";
 import ProjectSettings from "@/components/ProjectSettings";
-import AITools from "@/components/AITools";
 import type { ScriptMeta } from "@/components/ScriptSelector";
 import { parseScenesFallback } from "@/lib/parseScript";
 import { buildProjectFromParsed, useProjectStore } from "@/lib/scriptStore";
 
 type AppState = "idle" | "loading" | "ready" | "error";
-type MainView = "viewer" | "ai";
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>("idle");
-  const [mainView, setMainView] = useState<MainView>("viewer");
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [characters, setCharacters] = useState<CharacterStats[]>([]);
   const [title, setTitle] = useState("");
@@ -90,6 +87,23 @@ export default function Home() {
   }
 
   async function loadDemoScript(script: ScriptMeta) {
+    // Handle JSON project files directly
+    if (script.filename.endsWith(".json")) {
+      setAppState("loading"); setCurrentScript(script.name);
+      log(`loading project JSON: ${script.filename}`);
+      try {
+        const res = await fetch(script.path);
+        if (!res.ok) throw new Error(`Failed: ${res.status}`);
+        const project = await res.json();
+        store.load(project);
+        setScenes([]); setCharacters([]); setTitle(project.film?.title ?? script.name);
+        setAppState("ready");
+      } catch (err: any) {
+        setError(err.message ?? "Failed to load project"); setAppState("error");
+      }
+      return;
+    }
+
     setAppState("loading"); setError(""); setCurrentScript(script.name);
     setDebug({ fileName: script.filename, fileType: "demo script", log: [] });
     log(`loading: ${script.filename}`);
@@ -181,23 +195,10 @@ export default function Home() {
           <ScriptSelector onLoad={loadDemoScript} currentScript={currentScript} />
           {appState === "ready" && (
             <>
-              {/* View toggle */}
-              <div className="flex rounded-lg bg-gray-200 p-0.5 gap-0.5">
-                <button
-                  onClick={() => setMainView("viewer")}
-                  className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${mainView === "viewer" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                >viewer</button>
-                <button
-                  onClick={() => setMainView("ai")}
-                  className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors flex items-center gap-1 ${mainView === "ai" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  <span className="text-[10px]">✶</span> AI
-                </button>
-              </div>
               <button onClick={store.exportJSON}
                 className="rounded px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
                 title="Export project JSON">↓ json</button>
-              <button onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); setCallsheetUrl(undefined); }}
+              <button onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); setCallsheetUrl(undefined); setCallsheetError(""); }}
                 className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300">new</button>
             </>
           )}
@@ -208,14 +209,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Project settings — always visible chip row when script loaded */}
       {appState === "ready" && (
         <div className="mb-2">
           <ProjectSettings film={store.project.film} onUpdate={store.updateFilm} />
         </div>
       )}
 
-      {/* Upload */}
       {(appState === "idle" || appState === "error") && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <h2 className="text-2xl font-light text-gray-800">Upload a screenplay</h2>
@@ -243,34 +242,26 @@ export default function Home() {
         </div>
       )}
 
-      {appState === "ready" && scenes.length > 0 && (
+      {appState === "ready" && (
         <div className="flex-1 min-h-0">
-          {mainView === "viewer" ? (
-            <ScriptDisplay
-              scenes={scenes}
-              characters={characters}
-              title={title}
-              project={store.project}
-              onUpdateCharacter={store.updateCharacter}
-              onMergeCharacters={store.mergeCharacters}
-              onUpdateLocation={store.updateLocation}
-              onUpdateScene={store.updateScene}
-              onUpdateSceneById={store.updateScene}
-              onAddTeamMember={store.addTeamMember}
-              onUpdateTeamMember={store.updateTeamMember}
-              onRemoveTeamMember={store.removeTeamMember}
-            />
-          ) : (
-            <div className="h-full rounded-xl border border-gray-200 bg-white p-5 overflow-hidden">
-              <AITools
-                project={store.project}
-                onGenerateCallsheet={generateCallsheet}
-                generatingCallsheet={generatingCallsheet}
-                callsheetUrl={callsheetUrl}
-                callsheetError={callsheetError}
-              />
-            </div>
-          )}
+          <ScriptDisplay
+            scenes={scenes}
+            characters={characters}
+            title={title}
+            project={store.project}
+            onUpdateCharacter={store.updateCharacter}
+            onMergeCharacters={store.mergeCharacters}
+            onUpdateLocation={store.updateLocation}
+            onUpdateScene={store.updateScene}
+            onUpdateSceneById={store.updateScene}
+            onAddTeamMember={store.addTeamMember}
+            onUpdateTeamMember={store.updateTeamMember}
+            onRemoveTeamMember={store.removeTeamMember}
+            onGenerateCallsheet={generateCallsheet}
+            generatingCallsheet={generatingCallsheet}
+            callsheetUrl={callsheetUrl}
+            callsheetError={callsheetError}
+          />
         </div>
       )}
 

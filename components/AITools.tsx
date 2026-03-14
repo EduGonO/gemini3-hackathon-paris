@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import GeminiChat from "@/components/GeminiChat";
+import CallsheetFallback from "@/components/CallsheetFallback";
 import type { ProjectState } from "@/types/schema";
 
 interface Props {
@@ -12,46 +13,38 @@ interface Props {
   callsheetError?: string;
 }
 
-function CallsheetPanel({ project, onGenerate, generating, url, error }: {
+function CallsheetPanel({ project, onGenerate, generating, url, error, onShowFallback }: {
   project: ProjectState;
   onGenerate: () => void;
   generating: boolean;
   url?: string;
   error?: string;
+  onShowFallback: () => void;
 }) {
   const { film, scenes, characters, team } = project;
   const scheduled = scenes.filter((s) => s.shootingDate).length;
   const withActors = characters.filter((c) => c.actorName).length;
+  const isMissingCredentials = error?.includes("GOOGLE_SERVICE_ACCOUNT") || error?.includes("service account");
 
   return (
     <div className="space-y-4">
-      {/* Project summary */}
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Project summary</div>
         <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="rounded-lg bg-gray-50 p-2.5">
-            <div className="text-lg font-light text-gray-900">{scenes.length}</div>
-            <div className="text-[10px] text-gray-500">scenes</div>
-          </div>
-          <div className="rounded-lg bg-gray-50 p-2.5">
-            <div className="text-lg font-light text-gray-900">{characters.length}</div>
-            <div className="text-[10px] text-gray-500">characters</div>
-          </div>
-          <div className="rounded-lg bg-gray-50 p-2.5">
-            <div className="text-lg font-light text-gray-900">{withActors}/{characters.length}</div>
-            <div className="text-[10px] text-gray-500">actors assigned</div>
-          </div>
-          <div className="rounded-lg bg-gray-50 p-2.5">
-            <div className="text-lg font-light text-gray-900">{scheduled}/{scenes.length}</div>
-            <div className="text-[10px] text-gray-500">scenes scheduled</div>
-          </div>
-          <div className="rounded-lg bg-gray-50 p-2.5 col-span-2">
-            <div className="text-lg font-light text-gray-900">{team.length}</div>
-            <div className="text-[10px] text-gray-500">crew members</div>
-          </div>
+          {[
+            [scenes.length, "scenes"],
+            [characters.length, "characters"],
+            [`${withActors}/${characters.length}`, "actors assigned"],
+            [`${scheduled}/${scenes.length}`, "scenes scheduled"],
+            [team.length, "crew members"],
+          ].map(([val, label]) => (
+            <div key={String(label)} className={`rounded-lg bg-gray-50 p-2.5 ${String(label) === "crew members" ? "col-span-2" : ""}`}>
+              <div className="text-lg font-light text-gray-900">{val}</div>
+              <div className="text-[10px] text-gray-500">{label}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Readiness indicators */}
         <div className="mt-3 space-y-1.5">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Callsheet readiness</div>
           {[
@@ -69,7 +62,6 @@ function CallsheetPanel({ project, onGenerate, generating, url, error }: {
         </div>
       </div>
 
-      {/* Generate button */}
       <button
         onClick={onGenerate}
         disabled={generating}
@@ -81,17 +73,16 @@ function CallsheetPanel({ project, onGenerate, generating, url, error }: {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
-            Generating callsheet…
+            Generating…
           </>
         ) : "📄 Generate Google Docs Callsheet"}
       </button>
 
-      {/* Result */}
       {url && (
         <a href={url} target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 hover:bg-green-100 transition-colors">
           <span className="text-lg">✓</span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="font-medium">Callsheet ready</div>
             <div className="text-[11px] text-green-600 truncate">{url}</div>
           </div>
@@ -100,12 +91,25 @@ function CallsheetPanel({ project, onGenerate, generating, url, error }: {
       )}
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
-          <div className="font-medium mb-0.5">Generation failed</div>
-          <div className="text-red-600">{error}</div>
-          <div className="mt-2 text-[10px] text-red-500">
-            Make sure GOOGLE_SERVICE_ACCOUNT is set in .env.local and the service account has Google Docs + Drive API access.
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 space-y-2">
+          <div className="text-xs font-medium text-amber-800">
+            {isMissingCredentials ? "Google Docs not configured" : "Generation failed"}
           </div>
+          {isMissingCredentials ? (
+            <>
+              <p className="text-[11px] text-amber-700">
+                Set <code className="bg-amber-100 px-1 rounded">GOOGLE_SERVICE_ACCOUNT</code> in .env.local to enable Google Docs export.
+              </p>
+              <button
+                onClick={onShowFallback}
+                className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-50 transition-colors"
+              >
+                📋 View callsheet in browser instead
+              </button>
+            </>
+          ) : (
+            <p className="text-[11px] text-amber-600">{error}</p>
+          )}
         </div>
       )}
     </div>
@@ -118,38 +122,35 @@ export default function AITools({
   project, onGenerateCallsheet, generatingCallsheet, callsheetUrl, callsheetError,
 }: Props) {
   const [tab, setTab] = useState<AITab>("chat");
+  const [showFallback, setShowFallback] = useState(false);
 
-  const tabBtn = (t: AITab, label: string, count?: number) => (
+  const tabBtn = (t: AITab, label: string) => (
     <button
       onClick={() => setTab(t)}
       className={`flex-1 rounded-lg py-2 text-xs font-medium transition-colors ${
         tab === t ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
       }`}
     >
-      {label}{count !== undefined ? ` (${count})` : ""}
+      {label}
     </button>
   );
 
   return (
     <div className="h-full flex flex-col gap-3 overflow-hidden">
-      {/* Header */}
       <div className="flex-shrink-0">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-[11px] text-white font-bold flex-shrink-0">G</div>
           <div>
             <h2 className="text-sm font-semibold text-gray-900">AI Tools</h2>
-            <p className="text-[10px] text-gray-500">Powered by Gemini · {project.film.title}</p>
+            <p className="text-[10px] text-gray-500">{project.film.title}</p>
           </div>
         </div>
-
-        {/* Tab switcher */}
         <div className="flex gap-1 rounded-xl bg-gray-100 p-1">
           {tabBtn("chat", "✶ Chat")}
           {tabBtn("callsheet", "📄 Callsheet")}
         </div>
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === "chat" && (
           <div className="h-full flex flex-col">
@@ -159,7 +160,6 @@ export default function AITools({
             <GeminiChat project={project} />
           </div>
         )}
-
         {tab === "callsheet" && (
           <CallsheetPanel
             project={project}
@@ -167,9 +167,14 @@ export default function AITools({
             generating={generatingCallsheet}
             url={callsheetUrl}
             error={callsheetError}
+            onShowFallback={() => setShowFallback(true)}
           />
         )}
       </div>
+
+      {showFallback && (
+        <CallsheetFallback project={project} onClose={() => setShowFallback(false)} />
+      )}
     </div>
   );
 }

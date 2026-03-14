@@ -6,8 +6,6 @@ import type { ProjectState } from "@/types/schema";
 interface Message {
   role: "user" | "assistant";
   text: string;
-  model?: string;
-  provider?: "gemini" | "openai";
 }
 
 interface Props {
@@ -21,17 +19,6 @@ const SUGGESTIONS = [
   "What's the total estimated runtime?",
   "Which characters appear most frequently?",
 ];
-
-function ProviderBadge({ model, provider }: { model: string; provider: "gemini" | "openai" }) {
-  const isGemini = provider === "gemini";
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
-      isGemini ? "bg-blue-100 text-blue-600" : "bg-emerald-100 text-emerald-600"
-    }`}>
-      {isGemini ? "✦" : "⬡"} {model}
-    </span>
-  );
-}
 
 export default function GeminiChat({ project }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -87,12 +74,7 @@ export default function GeminiChat({ project }: Props) {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        text: data.text,
-        model: data.model,
-        provider: data.provider,
-      }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: data.text }]);
     } catch (err: any) {
       setMessages((prev) => [...prev, {
         role: "assistant",
@@ -105,20 +87,13 @@ export default function GeminiChat({ project }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
-      {/* Message history */}
       {messages.length > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
           <div className="max-h-48 overflow-y-auto p-3 space-y-3">
             {messages.map((m, i) => (
               <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 {m.role === "assistant" && (
-                  <div className={`w-5 h-5 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center text-[9px] text-white font-bold ${
-                    m.provider === "openai"
-                      ? "bg-gradient-to-br from-emerald-400 to-teal-500"
-                      : "bg-gradient-to-br from-blue-400 to-purple-500"
-                  }`}>
-                    {m.provider === "openai" ? "⬡" : "G"}
-                  </div>
+                  <div className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex-shrink-0 mt-0.5 flex items-center justify-center text-[9px] text-white font-bold">G</div>
                 )}
                 <div className={`rounded-xl px-2.5 py-1.5 text-xs max-w-[85%] ${
                   m.role === "user"
@@ -126,11 +101,6 @@ export default function GeminiChat({ project }: Props) {
                     : "bg-gray-50 text-gray-800 border border-gray-200"
                 }`}>
                   <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
-                  {m.role === "assistant" && m.model && m.provider && (
-                    <div className="mt-1.5">
-                      <ProviderBadge model={m.model} provider={m.provider} />
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
@@ -151,7 +121,6 @@ export default function GeminiChat({ project }: Props) {
         </div>
       )}
 
-      {/* Suggestion chips */}
       {messages.length === 0 && (
         <div className="flex flex-wrap gap-1">
           {SUGGESTIONS.map((s, i) => (
@@ -163,7 +132,6 @@ export default function GeminiChat({ project }: Props) {
         </div>
       )}
 
-      {/* Input */}
       <div className="flex gap-1.5">
         <input
           value={input}
