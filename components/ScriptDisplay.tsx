@@ -45,6 +45,9 @@ interface Props {
   onAddTeamMember?: (m: TeamMember) => void;
   onUpdateTeamMember?: (id: string, patch: Partial<TeamMember>) => void;
   onRemoveTeamMember?: (id: string) => void;
+  onGenerateCallsheet?: () => void;
+  generatingCallsheet?: boolean;
+  callsheetUrl?: string;
 }
 
 // 9-color palette for character badges
@@ -60,7 +63,7 @@ const CHAR_COLORS = [
   "bg-orange-100 text-orange-800",
 ];
 
-export default function ScriptDisplay({ scenes, characters, title, project, onUpdateCharacter, onMergeCharacters, onUpdateLocation, onUpdateScene, onUpdateSceneById, onAddTeamMember, onUpdateTeamMember, onRemoveTeamMember }: Props) {
+export default function ScriptDisplay({ scenes, characters, title, project, onUpdateCharacter, onMergeCharacters, onUpdateLocation, onUpdateScene, onUpdateSceneById, onAddTeamMember, onUpdateTeamMember, onRemoveTeamMember, onGenerateCallsheet, generatingCallsheet, callsheetUrl }: Props) {
   const [activeScene, setActiveScene] = useState(0);
 
   // Build color map from all known characters (sorted by dialogue count — most prominent first)
@@ -205,6 +208,7 @@ export default function ScriptDisplay({ scenes, characters, title, project, onUp
             team={project.team}
             film={project.film}
             allScenes={project.scenes}
+            project={project!}
             onUpdateScene={(patch) => onUpdateScene?.(activeSceneData.id, patch)}
             onUpdateCharacter={(id, patch) => onUpdateCharacter?.(id, patch)}
             onMergeCharacters={(keepId, mergeIds) => onMergeCharacters?.(keepId, mergeIds)}
@@ -213,6 +217,9 @@ export default function ScriptDisplay({ scenes, characters, title, project, onUp
             onUpdateTeamMember={(id, patch) => onUpdateTeamMember?.(id, patch)}
             onRemoveTeamMember={(id) => onRemoveTeamMember?.(id)}
             onUpdateSceneById={(id, patch) => onUpdateSceneById?.(id, patch)}
+            onGenerateCallsheet={() => onGenerateCallsheet?.()}
+            generatingCallsheet={generatingCallsheet ?? false}
+            callsheetUrl={callsheetUrl}
           />
         ) : scene ? (
           // Fallback when no project state yet

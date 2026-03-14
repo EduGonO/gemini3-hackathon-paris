@@ -21,6 +21,9 @@ export default function Home() {
   const [showDebug, setShowDebug] = useState(false);
   const [debug, setDebug] = useState<DebugInfo>({ log: [] });
   const [currentScript, setCurrentScript] = useState<string | undefined>();
+  const [generatingCallsheet, setGeneratingCallsheet] = useState(false);
+  const [callsheetUrl, setCallsheetUrl] = useState<string | undefined>();
+  const [callsheetError, setCallsheetError] = useState("");
   const store = useProjectStore();
 
   function log(msg: string) {
@@ -132,6 +135,27 @@ export default function Home() {
     if (file) processFile(file);
   };
 
+  async function generateCallsheet() {
+    if (!store.project.film.title) return;
+    setGeneratingCallsheet(true);
+    setCallsheetUrl(undefined);
+    setCallsheetError("");
+    try {
+      const res = await fetch("/api/callsheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: store.project }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setCallsheetUrl(data.docUrl);
+    } catch (err: any) {
+      setCallsheetError(err.message ?? "Failed to generate callsheet");
+    } finally {
+      setGeneratingCallsheet(false);
+    }
+  }
+
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-3">
 
@@ -217,6 +241,9 @@ export default function Home() {
             onAddTeamMember={store.addTeamMember}
             onUpdateTeamMember={store.updateTeamMember}
             onRemoveTeamMember={store.removeTeamMember}
+            onGenerateCallsheet={generateCallsheet}
+            generatingCallsheet={generatingCallsheet}
+            callsheetUrl={callsheetUrl}
           />
         </div>
       )}
