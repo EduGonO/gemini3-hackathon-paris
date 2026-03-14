@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { highlightDirectionText } from "@/lib/parseScript";
+import SceneInfoPanel from "@/components/SceneInfoPanel";
+import type { ProjectState, Character as ProjectCharacter, Location, SceneData, TeamMember } from "@/types/schema";
 
 // --- Types ---
 
@@ -34,6 +36,14 @@ interface Props {
   scenes: Scene[];
   characters: CharacterStats[];
   title?: string;
+  project?: ProjectState;
+  onUpdateCharacter?: (id: string, patch: Partial<ProjectCharacter>) => void;
+  onMergeCharacters?: (keepId: string, mergeIds: string[]) => void;
+  onUpdateLocation?: (id: string, patch: Partial<Location>) => void;
+  onUpdateScene?: (id: string, patch: Partial<SceneData>) => void;
+  onAddTeamMember?: (m: TeamMember) => void;
+  onUpdateTeamMember?: (id: string, patch: Partial<TeamMember>) => void;
+  onRemoveTeamMember?: (id: string) => void;
 }
 
 // 9-color palette for character badges
@@ -49,7 +59,7 @@ const CHAR_COLORS = [
   "bg-orange-100 text-orange-800",
 ];
 
-export default function ScriptDisplay({ scenes, characters, title }: Props) {
+export default function ScriptDisplay({ scenes, characters, title, project, onUpdateCharacter, onMergeCharacters, onUpdateLocation, onUpdateScene, onAddTeamMember, onUpdateTeamMember, onRemoveTeamMember }: Props) {
   const [activeScene, setActiveScene] = useState(0);
 
   // Build color map from all known characters (sorted by dialogue count — most prominent first)
@@ -58,6 +68,15 @@ export default function ScriptDisplay({ scenes, characters, title }: Props) {
     characters.forEach((c, i) => { map[c.name] = CHAR_COLORS[i % CHAR_COLORS.length]; });
     return map;
   }, [characters]);
+
+  // Resolve project-level data for the active scene
+  const activeSceneData = project?.scenes[activeScene];
+  const activeSceneChars = activeSceneData
+    ? project!.characters.filter((c) => activeSceneData.characterIds.includes(c.id))
+    : [];
+  const activeLocation = activeSceneData
+    ? project!.locations.find((l) => l.id === activeSceneData.locationId)
+    : undefined;
 
   // Set of known character names for direction highlighting
   const knownChars = useMemo(
@@ -174,68 +193,36 @@ export default function ScriptDisplay({ scenes, characters, title }: Props) {
         )}
       </main>
 
-      {/* RIGHT — Scene info */}
-      <aside className="hidden w-56 flex-shrink-0 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:block">
-        {scene && (
-          <div className="space-y-5 text-sm">
-
-            {/* Scene metadata */}
+      {/* RIGHT — Scene info panel */}
+      <aside className="hidden w-64 flex-shrink-0 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:block">
+        {scene && project && activeSceneData ? (
+          <SceneInfoPanel
+            scene={activeSceneData}
+            characters={activeSceneChars}
+            allCharacters={project.characters}
+            location={activeLocation}
+            team={project.team}
+            onUpdateScene={(patch) => onUpdateScene?.(activeSceneData.id, patch)}
+            onUpdateCharacter={(id, patch) => onUpdateCharacter?.(id, patch)}
+            onMergeCharacters={(keepId, mergeIds) => onMergeCharacters?.(keepId, mergeIds)}
+            onUpdateLocation={(id, patch) => onUpdateLocation?.(id, patch)}
+            onAddTeamMember={(m) => onAddTeamMember?.(m)}
+            onUpdateTeamMember={(id, patch) => onUpdateTeamMember?.(id, patch)}
+            onRemoveTeamMember={(id) => onRemoveTeamMember?.(id)}
+          />
+        ) : scene ? (
+          // Fallback when no project state yet
+          <div className="space-y-4 text-sm">
             <div>
-              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Scene</h3>
-              <div className="space-y-1 text-xs text-gray-600">
-                <div><span className="text-gray-400">Setting </span>{scene.setting}</div>
-                <div><span className="text-gray-400">Location </span>{scene.location}</div>
-                {scene.time && <div><span className="text-gray-400">Time </span>{scene.time}</div>}
-                <div>
-                  <span className="text-gray-400">Duration </span>
-                  {scene.duration
-                    ? `${Math.floor(scene.duration / 60)}m ${scene.duration % 60}s`
-                    : "—"}
-                </div>
+              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Characters</h3>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {scene.characters.length ? scene.characters.map((c) => (
+                  <span key={c} className={`rounded px-2 py-0.5 text-xs font-bold ${colorMap[c] ?? "bg-gray-100 text-gray-700"}`}>{c}</span>
+                )) : <span className="text-xs text-gray-400">None</span>}
               </div>
             </div>
-
-            {/* Characters in this scene */}
-            <div>
-              <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-                Cast ({scene.characters.length})
-              </h3>
-              {scene.characters.length ? (
-                <div className="space-y-2">
-                  {scene.characters.map((name) => {
-                    const stats = characters.find((c) => c.name === name);
-                    return (
-                      <div key={name} className="flex items-start justify-between gap-2">
-                        <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${colorMap[name] ?? "bg-gray-100 text-gray-700"}`}>
-                          {name}
-                        </span>
-                        {stats && (
-                          <span className="text-[10px] text-gray-400 text-right">
-                            {stats.dialogueCount} lines · {stats.sceneCount} scenes
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <span className="text-xs text-gray-400">None detected</span>
-              )}
-            </div>
-
-            {/* Stretch placeholders */}
-            <div className="rounded border border-dashed border-gray-200 p-3 text-xs text-gray-400">
-              📅 Shooting dates — coming soon
-            </div>
-            <div className="rounded border border-dashed border-gray-200 p-3 text-xs text-gray-400">
-              📍 Location map — coming soon
-            </div>
-            <div className="rounded border border-dashed border-gray-200 p-3 text-xs text-gray-400">
-              🌤 Weather — coming soon
-            </div>
-
           </div>
-        )}
+        ) : null}
       </aside>
 
     </div>
