@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { SceneData, Character, Location, TeamMember, FilmProject } from "@/types/schema";
+import type { SceneData, Character, Location, TeamMember, FilmProject, ProjectState } from "@/types/schema";
 import ShootingCalendar from "@/components/ShootingCalendar";
 import WeatherForecast from "@/components/WeatherForecast";
 import LocationMap from "@/components/LocationMap";
-import GeminiChat from "@/components/GeminiChat";
-import type { ProjectState } from "@/types/schema";
 
 const TEAM_ROLES = [
   "Director", "1st AD", "2nd AD", "Script Supervisor",
@@ -51,9 +49,6 @@ interface Props {
   onUpdateTeamMember: (id: string, patch: Partial<TeamMember>) => void;
   onRemoveTeamMember: (id: string) => void;
   onUpdateSceneById: (id: string, patch: Partial<SceneData>) => void;
-  onGenerateCallsheet: () => void;
-  generatingCallsheet: boolean;
-  callsheetUrl?: string;
 }
 
 function EditField({ value, placeholder, type = "text", onSave }: {
@@ -231,7 +226,6 @@ export default function SceneInfoPanel({
   scene, characters, allCharacters, location, team, film, allScenes, project,
   onUpdateScene, onUpdateCharacter, onMergeCharacters, onUpdateLocation,
   onAddTeamMember, onUpdateTeamMember, onRemoveTeamMember, onUpdateSceneById,
-  onGenerateCallsheet, generatingCallsheet, callsheetUrl,
 }: Props) {
   const [showImport, setShowImport] = useState(false);
   const assignedCrew = scene.assignedCrew ?? [];
@@ -271,15 +265,12 @@ export default function SceneInfoPanel({
         )}
       </div>
 
-      {/* Map */}
       <SectionLabel label="Location" />
       <LocationMap address={mapAddress} fallbackCity={mapFallback} />
 
-      {/* Weather */}
       <SectionLabel label="Weather" />
       <WeatherForecast location={weatherLocation} date={weatherDate} />
 
-      {/* Cast */}
       {characters.length > 0 && (
         <>
           <SectionLabel label={`Cast · ${characters.length}`} />
@@ -294,7 +285,6 @@ export default function SceneInfoPanel({
         </>
       )}
 
-      {/* Crew */}
       <SectionLabel label={`Crew · ${team.length}`}
         action={<button onClick={() => setShowImport(true)} className="text-[9px] text-gray-400 hover:text-blue-500">↓ import</button>}
       />
@@ -308,7 +298,6 @@ export default function SceneInfoPanel({
         <AddCrewForm onAdd={onAddTeamMember} />
       </div>
 
-      {/* Scene details */}
       <SectionLabel label="Scene" />
       <div className="space-y-1.5">
         <div>
@@ -329,42 +318,8 @@ export default function SceneInfoPanel({
         </div>
       </div>
 
-      {/* Schedule */}
       <SectionLabel label="Schedule" />
       <ShootingCalendar film={film} scenes={allScenes} onUpdateScene={onUpdateSceneById} />
-
-      {/* Callsheet */}
-      <SectionLabel label="Callsheet" />
-      <div className="space-y-2">
-        <button
-          onClick={onGenerateCallsheet}
-          disabled={generatingCallsheet}
-          className="w-full rounded-xl border border-gray-300 bg-white py-2 text-xs font-medium text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {generatingCallsheet ? (
-            <>
-              <svg className="h-3.5 w-3.5 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-              </svg>
-              Generating…
-            </>
-          ) : (
-            <>📄 Generate Google Docs Callsheet</>
-          )}
-        </button>
-        {callsheetUrl && (
-          <a href={callsheetUrl} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 hover:bg-green-100 transition-colors">
-            <span>✓</span>
-            <span className="truncate">Callsheet ready — open in Google Docs ↗</span>
-          </a>
-        )}
-      </div>
-
-      {/* Gemini */}
-      <SectionLabel label="Ask Gemini" />
-      <GeminiChat project={project} />
 
       {showImport && (
         <ImportModal onImport={(ms) => ms.forEach(onAddTeamMember)} onClose={() => setShowImport(false)} />
