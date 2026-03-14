@@ -1,6 +1,5 @@
 // lib/parseScript.ts
 // Script parsing utility — integrates with Gemini API
-// Status: skeleton / in progress
 
 import type { Scene, ScenePart, CharacterStats } from "@/components/ScriptDisplay";
 
@@ -15,7 +14,8 @@ export interface ParseResult {
 
 // --- Stop words — never treated as character names ---
 const STOP_WORDS = new Set([
-  "INT", "EXT", "INT/EXT", "EXT/INT", "CUT", "CUT TO", "SMASH CUT",
+  "INT", "EXT", "INT/EXT", "EXT/INT",
+  "CUT", "CUT TO", "SMASH CUT", "MATCH CUT", "JUMP CUT",
   "FADE", "FADE IN", "FADE OUT", "FADE TO", "DISSOLVE", "DISSOLVE TO",
   "TITLE", "TITLES", "SUPER", "SUBTITLE", "CAPTION",
   "THE", "END", "CONTINUED", "CONT", "MORE",
@@ -24,14 +24,16 @@ const STOP_WORDS = new Set([
   "INTERCUT", "INTERCUT WITH",
   "POV", "INSERT", "BACK TO SCENE",
   "OVER", "OVER BLACK", "BLACK",
-  "A", "AN", "AND", "OR", "THE", "TO", "IN", "ON", "AT", "BY",
+  "A", "AN", "AND", "OR", "TO", "IN", "ON", "AT", "BY",
+  "INT.", "EXT.", "V.O.", "O.S.", "O.C.",
 ]);
 
 // --- cleanCharacterName ---
-// Strips parentheticals like (V.O.), (O.S.), (CONT'D), (cont'd), trailing punctuation
+// Strips parentheticals like (V.O.), (O.S.), (CONT'D), trailing punctuation, normalizes to uppercase
 export function cleanCharacterName(raw: string): string {
   return raw
-    .replace(/\s*\([^)]*\)/g, "")   // remove (V.O.), (O.S.), (CONT'D), etc.
+    .normalize("NFC")
+    .replace(/\s*\([^)]*\)/g, "")      // remove (V.O.), (O.S.), (CONT'D), etc.
     .replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9'\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -39,41 +41,39 @@ export function cleanCharacterName(raw: string): string {
 }
 
 // --- isCharacterCue ---
-// Returns true if a line looks like a character cue (all-caps, not a stop word, etc.)
-function isCharacterCue(line: string): boolean {
-  const raw = line.trim();
-  if (!raw) return false;
+// A character cue must be ENTIRELY uppercase (trimmed === trimmed.toUpperCase()).
+// This is the key discriminator between character names and direction text.
+function isCharacterCue(trimmed: string): boolean {
+  if (!trimmed) return false;
 
-  // Must not end with a colon (rules out "TITLE:", "NOTE:", "EXT.", etc.)
-  if (raw.endsWith(":")) return false;
+  // CRITICAL: must be entirely uppercase — mixed case = direction text
+  if (trimmed !== trimmed.toUpperCase()) return false;
 
-  // Strip parentheticals for the purpose of detection
-  const stripped = cleanCharacterName(raw);
-  if (!stripped) return false;
-
-  // Must be all uppercase after stripping
-  if (stripped !== stripped.toUpperCase()) return false;
-
-  // Length guard — character names are short
-  if (stripped.length > 40) return false;
-
-  // Must start with a letter
-  if (!/^[A-Z]/.test(stripped)) return false;
+  // Strip parentheticals for further checks
+  const cleaned = cleanCharacterName(trimmed);
+  if (!cleaned) return false;
 
   // Must not be a stop word
-  if (STOP_WORDS.has(stripped)) return false;
+  if (STOP_WORDS.has(cleaned)) return false;
 
-  // Must not look like a scene transition (ends with "TO:" pattern)
-  if (/\bTO:$/.test(raw)) return false;
+  // Must not end with a colon (rules out "TITLE:", "NOTE:", transitions)
+  if (trimmed.endsWith(":")) return false;
 
-  // Must not be a slug line fragment
-  if (/^(INT|EXT)\.?[\s/]/.test(raw)) return false;
+  // Must not look like a scene heading fragment
+  if (/^(INT|EXT)\.?[\s/]/.test(trimmed)) return false;
 
-  // Must not be all numbers or punctuation
-  if (/^[\d\s.,-]+$/.test(stripped)) return false;
+  // Must not be a transition line ("CUT TO:", "FADE OUT.", etc.)
+  if (/\bTO:$/.test(trimmed)) return false;
+  if (/^(FADE|CUT|DISSOLVE|SMASH|MATCH|JUMP)/.test(cleaned) && cleaned.length < 30) return false;
 
-  // Must have at least one letter-only word of length > 1
-  if (!/[A-Z]{2,}/.test(stripped)) return false;
+  // Must not be purely numeric or punctuation
+  if (/^[\d\s.,\-–—]+$/.test(cleaned)) return false;
+
+  // Length guard — character names are short
+  if (cleaned.length > 40) return false;
+
+  // Must contain at least one sequence of 2+ letters
+  if (!/[A-Z]{2,}/.test(cleaned)) return false;
 
   return true;
 }
@@ -113,16 +113,18 @@ export async function extractTextFromPdf(file: File): Promise<string> {
 const HEADING_REGEX =
   /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.)\s*(.*)$/i;
 
+// --- Character line regex ---
+// Matches lines that could be character cues: optionally indented, letters/numbers/spaces/apostrophes
+const CHAR_LINE_REGEX = /^\s{0,20}([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s'().-]+)$/;
+
 // --- highlightDirectionText ---
-// Returns an array of segments for direction text, marking known character names.
-// Used by ScriptDisplay to render highlighted spans.
+// Returns typed segments marking known character names in direction text
 export function highlightDirectionText(
   text: string,
   knownChars: Set<string>
 ): Array<{ text: string; isCharacter: boolean; character?: string }> {
   if (knownChars.size === 0) return [{ text, isCharacter: false }];
 
-  // Build a regex from known character names, longest first to avoid partial matches
   const sorted = Array.from(knownChars).sort((a, b) => b.length - a.length);
   const escaped = sorted.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const pattern = new RegExp(`\\b(${escaped.join("|")})\\b`, "gi");
@@ -150,14 +152,14 @@ export function highlightDirectionText(
 
 // --- buildCharacterStats ---
 export function buildCharacterStats(scenes: Scene[]): CharacterStats[] {
-  const map = new Map<string, { sceneCount: number; dialogueCount: number; scenes: Set<number> }>();
+  const map = new Map<string, { dialogueCount: number; scenes: Set<number> }>();
 
   for (const scene of scenes) {
     const seenInScene = new Set<string>();
     for (const part of scene.parts) {
       if (part.type === "dialogue") {
         const name = part.character;
-        if (!map.has(name)) map.set(name, { sceneCount: 0, dialogueCount: 0, scenes: new Set() });
+        if (!map.has(name)) map.set(name, { dialogueCount: 0, scenes: new Set() });
         const entry = map.get(name)!;
         entry.dialogueCount += 1;
         if (!seenInScene.has(name)) {
@@ -175,31 +177,31 @@ export function buildCharacterStats(scenes: Scene[]): CharacterStats[] {
       dialogueCount: data.dialogueCount,
       scenes: Array.from(data.scenes).sort((a, b) => a - b),
     }))
+    .filter((c) => c.dialogueCount > 0)
     .sort((a, b) => b.dialogueCount - a.dialogueCount);
 }
 
 // --- parseScenesFallback ---
+// Line-by-line state machine. Strictly requires ALL-CAPS lines for character cues.
 export function parseScenesFallback(text: string): { scenes: Scene[]; characters: CharacterStats[] } {
   const scenes: Scene[] = [];
   let current: Partial<Scene> | null = null;
   let parts: ScenePart[] = [];
-  let directionBuffer: string[] = [];
-  let inDialogue = false;
-  let currentChar = "";
-  let dialogueBuffer: string[] = [];
+  let currentDialogue: { character: string; lines: string[] } | null = null;
+  let directionLines: string[] = [];
 
   function flushDirection() {
-    const t = directionBuffer.join(" ").replace(/\s+/g, " ").trim();
+    if (!directionLines.length) return;
+    const t = directionLines.join(" ").replace(/\s+/g, " ").trim();
     if (t) parts.push({ type: "direction", text: t });
-    directionBuffer = [];
+    directionLines = [];
   }
 
   function flushDialogue() {
-    const t = dialogueBuffer.join(" ").replace(/\s+/g, " ").trim();
-    if (t && currentChar) parts.push({ type: "dialogue", character: currentChar, text: t });
-    dialogueBuffer = [];
-    currentChar = "";
-    inDialogue = false;
+    if (!currentDialogue) return;
+    const t = currentDialogue.lines.join(" ").replace(/\s+/g, " ").trim();
+    if (t) parts.push({ type: "dialogue", character: currentDialogue.character, text: t });
+    currentDialogue = null;
   }
 
   function finalizeScene() {
@@ -223,26 +225,29 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
     });
   }
 
-  for (const rawLine of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/);
+
+  for (const rawLine of lines) {
     const line = rawLine.trimEnd();
     const headingMatch = line.match(HEADING_REGEX);
 
     if (headingMatch) {
       finalizeScene();
       parts = [];
-      inDialogue = false;
-      currentChar = "";
-      directionBuffer = [];
-      dialogueBuffer = [];
+      currentDialogue = null;
+      directionLines = [];
 
       const afterSetting = headingMatch[4]?.trim() ?? "";
-      const dashIdx = afterSetting.lastIndexOf(" - ");
-      const location = dashIdx !== -1 ? afterSetting.slice(0, dashIdx).trim() : afterSetting;
-      const time = dashIdx !== -1 ? afterSetting.slice(dashIdx + 3).trim() : "";
+      // Strip trailing scene number if present (e.g. "CAFE DE FLORE - NIGHT 12")
+      const trailing = afterSetting.match(/(.*?)(\s*\d+)$/);
+      const cleanedAfter = trailing ? trailing[1].trim() : afterSetting;
+      const dashIdx = cleanedAfter.lastIndexOf(" - ");
+      const location = dashIdx !== -1 ? cleanedAfter.slice(0, dashIdx).trim() : cleanedAfter;
+      const time = dashIdx !== -1 ? cleanedAfter.slice(dashIdx + 3).trim() : "";
 
       current = {
         sceneNumber: scenes.length + 1,
-        heading: `${headingMatch[3]} ${afterSetting}`.trim(),
+        heading: `${headingMatch[3]} ${cleanedAfter}`.trim(),
         setting: headingMatch[3].replace(/\.$/, "").toUpperCase(),
         location,
         time,
@@ -254,25 +259,33 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
     if (!current) continue;
 
     const trimmed = line.trim();
+
+    // Blank line — flush dialogue if open, reset dialogue state
     if (!trimmed) {
-      if (inDialogue) flushDialogue();
+      flushDialogue();
       continue;
     }
 
-    if (isCharacterCue(trimmed)) {
+    // Check for character cue: CHAR_LINE_REGEX match + isCharacterCue
+    const charMatch = trimmed.match(CHAR_LINE_REGEX);
+    if (charMatch && isCharacterCue(trimmed)) {
       flushDialogue();
       flushDirection();
-      inDialogue = true;
-      currentChar = cleanCharacterName(trimmed);
-      dialogueBuffer = [];
+      const name = cleanCharacterName(charMatch[1].trim());
+      if (name) {
+        currentDialogue = { character: name, lines: [] };
+      }
       continue;
     }
 
-    if (inDialogue) {
-      dialogueBuffer.push(trimmed);
-    } else {
-      directionBuffer.push(trimmed);
+    // If we're in a dialogue block, accumulate dialogue
+    if (currentDialogue) {
+      currentDialogue.lines.push(trimmed);
+      continue;
     }
+
+    // Otherwise it's direction
+    directionLines.push(trimmed);
   }
 
   finalizeScene();
