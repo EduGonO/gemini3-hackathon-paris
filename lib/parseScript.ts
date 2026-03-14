@@ -13,13 +13,72 @@ export interface ParseResult {
   characters: CharacterStats[];
 }
 
-// --- Gemini-powered parser (TODO) ---
+// --- Stop words — never treated as character names ---
+const STOP_WORDS = new Set([
+  "INT", "EXT", "INT/EXT", "EXT/INT", "CUT", "CUT TO", "SMASH CUT",
+  "FADE", "FADE IN", "FADE OUT", "FADE TO", "DISSOLVE", "DISSOLVE TO",
+  "TITLE", "TITLES", "SUPER", "SUBTITLE", "CAPTION",
+  "THE", "END", "CONTINUED", "CONT", "MORE",
+  "DAY", "NIGHT", "DUSK", "DAWN", "MORNING", "EVENING", "LATER",
+  "CONTINUOUS", "MOMENTS LATER", "SIMULTANEOUSLY",
+  "INTERCUT", "INTERCUT WITH",
+  "POV", "INSERT", "BACK TO SCENE",
+  "OVER", "OVER BLACK", "BLACK",
+  "A", "AN", "AND", "OR", "THE", "TO", "IN", "ON", "AT", "BY",
+]);
 
-/**
- * Send raw screenplay text to Gemini and get back structured scene data.
- * Uses responseMimeType: "application/json" for deterministic output.
- * TODO: implement in /app/api/parse/route.ts
- */
+// --- cleanCharacterName ---
+// Strips parentheticals like (V.O.), (O.S.), (CONT'D), (cont'd), trailing punctuation
+export function cleanCharacterName(raw: string): string {
+  return raw
+    .replace(/\s*\([^)]*\)/g, "")   // remove (V.O.), (O.S.), (CONT'D), etc.
+    .replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9'\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+// --- isCharacterCue ---
+// Returns true if a line looks like a character cue (all-caps, not a stop word, etc.)
+function isCharacterCue(line: string): boolean {
+  const raw = line.trim();
+  if (!raw) return false;
+
+  // Must not end with a colon (rules out "TITLE:", "NOTE:", "EXT.", etc.)
+  if (raw.endsWith(":")) return false;
+
+  // Strip parentheticals for the purpose of detection
+  const stripped = cleanCharacterName(raw);
+  if (!stripped) return false;
+
+  // Must be all uppercase after stripping
+  if (stripped !== stripped.toUpperCase()) return false;
+
+  // Length guard — character names are short
+  if (stripped.length > 40) return false;
+
+  // Must start with a letter
+  if (!/^[A-Z]/.test(stripped)) return false;
+
+  // Must not be a stop word
+  if (STOP_WORDS.has(stripped)) return false;
+
+  // Must not look like a scene transition (ends with "TO:" pattern)
+  if (/\bTO:$/.test(raw)) return false;
+
+  // Must not be a slug line fragment
+  if (/^(INT|EXT)\.?[\s/]/.test(raw)) return false;
+
+  // Must not be all numbers or punctuation
+  if (/^[\d\s.,-]+$/.test(stripped)) return false;
+
+  // Must have at least one letter-only word of length > 1
+  if (!/[A-Z]{2,}/.test(stripped)) return false;
+
+  return true;
+}
+
+// --- Gemini-powered parser (TODO) ---
 export async function parseWithGemini(text: string): Promise<ParseResult> {
   const res = await fetch("/api/parse", {
     method: "POST",
@@ -27,16 +86,10 @@ export async function parseWithGemini(text: string): Promise<ParseResult> {
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error("Gemini parse failed");
-  const data = await res.json();
-  return data as ParseResult;
+  return res.json() as Promise<ParseResult>;
 }
 
 // --- PDF text extraction ---
-
-/**
- * Extract raw text from a PDF file via /api/ocr.
- * Uses pdf-parse on the server side.
- */
 export async function extractTextFromPdf(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -56,29 +109,77 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   });
 }
 
-// --- Fallback: client-side regex parser ---
-// Splits screenplay text into structured scenes with dialogue and direction parts.
-
+// --- Heading regex ---
 const HEADING_REGEX =
   /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.)\s*(.*)$/i;
 
-// A character cue: all-caps, short, trimmed — no lowercase letters
-function isCharacterCue(line: string): boolean {
-  const t = line.trim();
-  if (!t) return false;
-  if (t !== t.toUpperCase()) return false;        // must be all caps
-  if (t.length > 40) return false;               // character names are short
-  if (/^(INT|EXT|CUT|FADE|THE|END)/.test(t)) return false; // exclude headings/directions
-  if (/[.]{2,}/.test(t)) return false;           // exclude "CONTINUED..." etc
-  return /^[A-Z]/.test(t);
+// --- highlightDirectionText ---
+// Returns an array of segments for direction text, marking known character names.
+// Used by ScriptDisplay to render highlighted spans.
+export function highlightDirectionText(
+  text: string,
+  knownChars: Set<string>
+): Array<{ text: string; isCharacter: boolean; character?: string }> {
+  if (knownChars.size === 0) return [{ text, isCharacter: false }];
+
+  // Build a regex from known character names, longest first to avoid partial matches
+  const sorted = Array.from(knownChars).sort((a, b) => b.length - a.length);
+  const escaped = sorted.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`\\b(${escaped.join("|")})\\b`, "gi");
+
+  const segments: Array<{ text: string; isCharacter: boolean; character?: string }> = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index!;
+    if (start > lastIndex) {
+      segments.push({ text: text.slice(lastIndex, start), isCharacter: false });
+    }
+    const raw = match[0];
+    const cleaned = cleanCharacterName(raw);
+    segments.push({ text: raw, isCharacter: true, character: cleaned });
+    lastIndex = start + raw.length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ text: text.slice(lastIndex), isCharacter: false });
+  }
+
+  return segments.length > 0 ? segments : [{ text, isCharacter: false }];
 }
 
-/**
- * Regex-based scene and part splitter.
- * Returns scenes with structured parts (dialogue vs direction).
- * Good enough for a loading preview while Gemini is not yet wired up.
- */
-export function parseScenesFallback(text: string): Scene[] {
+// --- buildCharacterStats ---
+export function buildCharacterStats(scenes: Scene[]): CharacterStats[] {
+  const map = new Map<string, { sceneCount: number; dialogueCount: number; scenes: Set<number> }>();
+
+  for (const scene of scenes) {
+    const seenInScene = new Set<string>();
+    for (const part of scene.parts) {
+      if (part.type === "dialogue") {
+        const name = part.character;
+        if (!map.has(name)) map.set(name, { sceneCount: 0, dialogueCount: 0, scenes: new Set() });
+        const entry = map.get(name)!;
+        entry.dialogueCount += 1;
+        if (!seenInScene.has(name)) {
+          seenInScene.add(name);
+          entry.scenes.add(scene.sceneNumber);
+        }
+      }
+    }
+  }
+
+  return Array.from(map.entries())
+    .map(([name, data]) => ({
+      name,
+      sceneCount: data.scenes.size,
+      dialogueCount: data.dialogueCount,
+      scenes: Array.from(data.scenes).sort((a, b) => a - b),
+    }))
+    .sort((a, b) => b.dialogueCount - a.dialogueCount);
+}
+
+// --- parseScenesFallback ---
+export function parseScenesFallback(text: string): { scenes: Scene[]; characters: CharacterStats[] } {
   const scenes: Scene[] = [];
   let current: Partial<Scene> | null = null;
   let parts: ScenePart[] = [];
@@ -105,15 +206,20 @@ export function parseScenesFallback(text: string): Scene[] {
     if (!current) return;
     flushDialogue();
     flushDirection();
-    // collect unique characters from dialogue parts
     const chars = Array.from(
-      new Set(parts.filter((p): p is Extract<ScenePart, { type: "dialogue" }> => p.type === "dialogue").map((p) => p.character))
+      new Set(
+        parts
+          .filter((p): p is Extract<ScenePart, { type: "dialogue" }> => p.type === "dialogue")
+          .map((p) => p.character)
+      )
     );
     scenes.push({
       ...(current as Scene),
       parts,
       characters: chars,
-      rawText: parts.map((p) => p.type === "dialogue" ? `${p.character}\n${p.text}` : p.text).join("\n"),
+      rawText: parts
+        .map((p) => (p.type === "dialogue" ? `${p.character}\n${p.text}` : p.text))
+        .join("\n"),
     });
   }
 
@@ -148,9 +254,7 @@ export function parseScenesFallback(text: string): Scene[] {
     if (!current) continue;
 
     const trimmed = line.trim();
-
     if (!trimmed) {
-      // blank line — flush dialogue if open
       if (inDialogue) flushDialogue();
       continue;
     }
@@ -159,7 +263,7 @@ export function parseScenesFallback(text: string): Scene[] {
       flushDialogue();
       flushDirection();
       inDialogue = true;
-      currentChar = trimmed;
+      currentChar = cleanCharacterName(trimmed);
       dialogueBuffer = [];
       continue;
     }
@@ -172,5 +276,7 @@ export function parseScenesFallback(text: string): Scene[] {
   }
 
   finalizeScene();
-  return scenes;
+
+  const characters = buildCharacterStats(scenes);
+  return { scenes, characters };
 }
