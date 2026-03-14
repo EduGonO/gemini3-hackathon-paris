@@ -91,10 +91,10 @@ export default function Home() {
     setError("");
     setCurrentScript(script.name);
     setDebug({ fileName: script.filename, fileType: "demo script", log: [] });
-    log(`loading demo: ${script.filename}`);
+    log(`loading: ${script.filename}`);
     try {
       const res = await fetch(script.path);
-      if (!res.ok) throw new Error(`Failed to fetch ${script.path}: ${res.status}`);
+      if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
       const blob = await res.blob();
       log(`fetched ${(blob.size / 1024).toFixed(1)} KB`);
       setDebug((prev) => ({ ...prev, fileSize: blob.size }));
@@ -142,26 +142,48 @@ export default function Home() {
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-4">
+
       {/* Header */}
-      <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini3 hackathon paris - edu</h1>
-        <div className="flex items-center gap-2">
+      <div className="mb-2 flex items-center justify-between gap-4">
+
+        {/* Left: title + counts + settings */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {appState === "ready" ? (
+            <>
+              <h1 className="text-sm font-semibold tracking-tight text-gray-900 truncate capitalize">{title}</h1>
+              <span className="text-xs text-gray-400 flex-shrink-0">
+                {scenes.length} scenes · {store.project.characters.length} chars · {store.project.locations.length} loc
+              </span>
+              {/* Inline compact settings */}
+              <div className="flex-shrink-0">
+                <ProjectSettings film={store.project.film} onUpdate={store.updateFilm} />
+              </div>
+            </>
+          ) : (
+            <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini3 hackathon paris - edu</h1>
+          )}
+        </div>
+
+        {/* Right: actions */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <ScriptSelector onLoad={loadDemoScript} currentScript={currentScript} />
           {appState === "ready" && (
             <>
               <button
                 onClick={store.exportJSON}
-                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300"
+                className="rounded px-2 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
                 title="Export project as JSON"
-              >↓ JSON</button>
-              <button onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); }}
-                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300">new script</button>
+              >↓ json</button>
+              <button
+                onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); }}
+                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300"
+              >new</button>
             </>
           )}
-          <button onClick={() => setShowDebug((v) => !v)}
-            className={`rounded px-3 py-1 text-xs transition-colors ${showDebug ? "bg-gray-800 text-green-400" : "bg-gray-200 text-gray-600 hover:bg-gray-300"}`}>
-            debug
-          </button>
+          <button
+            onClick={() => setShowDebug((v) => !v)}
+            className={`rounded px-3 py-1 text-xs transition-colors ${showDebug ? "bg-gray-800 text-green-400" : "bg-gray-200 text-gray-600 hover:bg-gray-300"}`}
+          >debug</button>
         </div>
       </div>
 
@@ -170,8 +192,13 @@ export default function Home() {
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <h2 className="text-2xl font-light text-gray-800">Upload a screenplay</h2>
           <p className="text-sm text-gray-500">PDF, .fountain, or plain text</p>
-          <label htmlFor="file" onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)}
-            className={`flex w-80 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 text-center transition-colors ${isDragging ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white hover:border-gray-400"}`}>
+          <label
+            htmlFor="file"
+            onDrop={onDrop}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            className={`flex w-80 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-12 text-center transition-colors ${isDragging ? "border-blue-400 bg-blue-50" : "border-gray-300 bg-white hover:border-gray-400"}`}
+          >
             <svg className="h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5V19a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 19v-2.5M16.5 12L12 7.5 7.5 12M12 7.5v9" />
             </svg>
@@ -182,6 +209,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* Loading */}
       {appState === "loading" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3">
           <svg className="h-8 w-8 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
@@ -192,25 +220,23 @@ export default function Home() {
         </div>
       )}
 
+      {/* Viewer */}
       {appState === "ready" && scenes.length > 0 && (
-        <div className="flex flex-1 min-h-0 flex-col">
-          {/* Project settings bar */}
-          <ProjectSettings film={store.project.film} onUpdate={store.updateFilm} />
-          <div className="flex-1 min-h-0">
-            <ScriptDisplay
-              scenes={scenes}
-              characters={characters}
-              title={title}
-              project={store.project}
-              onUpdateCharacter={store.updateCharacter}
-              onMergeCharacters={store.mergeCharacters}
-              onUpdateLocation={store.updateLocation}
-              onUpdateScene={store.updateScene}
-              onAddTeamMember={store.addTeamMember}
-              onUpdateTeamMember={store.updateTeamMember}
-              onRemoveTeamMember={store.removeTeamMember}
-            />
-          </div>
+        <div className="flex-1 min-h-0">
+          <ScriptDisplay
+            scenes={scenes}
+            characters={characters}
+            title={title}
+            project={store.project}
+            onUpdateCharacter={store.updateCharacter}
+            onMergeCharacters={store.mergeCharacters}
+            onUpdateLocation={store.updateLocation}
+            onUpdateScene={store.updateScene}
+            onUpdateSceneById={store.updateScene}
+            onAddTeamMember={store.addTeamMember}
+            onUpdateTeamMember={store.updateTeamMember}
+            onRemoveTeamMember={store.removeTeamMember}
+          />
         </div>
       )}
 

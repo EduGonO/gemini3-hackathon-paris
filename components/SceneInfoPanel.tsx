@@ -48,6 +48,8 @@ interface Props {
   onUpdateSceneById: (id: string, patch: Partial<SceneData>) => void;
 }
 
+// ─── Inline edit field ────────────────────────────────────────────────────────────────────────────
+
 function EditField({ value, placeholder, type = "text", onSave }: {
   value?: string; placeholder?: string; type?: string; onSave: (v: string) => void;
 }) {
@@ -58,19 +60,34 @@ function EditField({ value, placeholder, type = "text", onSave }: {
       <input autoFocus type={type} value={draft} placeholder={placeholder}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") { onSave(draft); setEditing(false); } }}
-        className="flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-xs outline-none focus:border-blue-400"
+        className="flex-1 rounded border border-gray-300 px-1.5 py-0.5 text-xs outline-none focus:border-blue-400 min-w-0"
       />
-      <button onClick={() => { onSave(draft); setEditing(false); }} className="text-xs text-blue-500">✓</button>
+      <button onClick={() => { onSave(draft); setEditing(false); }} className="text-xs text-blue-500 flex-shrink-0">✓</button>
     </div>
   );
   return (
     <button onClick={() => { setDraft(value ?? ""); setEditing(true); }}
       className="w-full text-left rounded px-1.5 py-0.5 text-xs text-gray-600 hover:bg-gray-100 transition-colors group">
-      {value ? <span>{value}</span> : <span className="text-gray-300 italic">{placeholder ?? "—"}</span>}
+      {value
+        ? <span>{value}</span>
+        : <span className="text-gray-300 italic">{placeholder ?? "—"}</span>}
       <span className="ml-1 opacity-0 group-hover:opacity-100 text-[9px] text-gray-400">✎</span>
     </button>
   );
 }
+
+// ─── Section divider ────────────────────────────────────────────────────────────────────────────
+
+function SectionLabel({ label, action }: { label: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between pt-3 pb-1 border-t border-gray-100 first:border-t-0 first:pt-0">
+      <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">{label}</span>
+      {action}
+    </div>
+  );
+}
+
+// ─── Character card ───────────────────────────────────────────────────────────────────────────────────
 
 function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
   char: Character; colorClass: string; allCharacters: Character[];
@@ -79,40 +96,40 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
   const [expanded, setExpanded] = useState(false);
   const [showMerge, setShowMerge] = useState(false);
   const [mergeTarget, setMergeTarget] = useState("");
+
   return (
     <div className={`rounded-lg border p-2 text-xs ${colorClass}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="font-bold truncate">{char.canonicalName}</span>
-          {char.aliases.length > 0 && <span className="text-[9px] opacity-60">+{char.aliases.length}</span>}
+          {char.actorName && <span className="text-[10px] opacity-60 truncate">· {char.actorName}</span>}
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button onClick={() => { setShowMerge((v) => !v); setExpanded(true); }} title="Merge" className="opacity-50 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40">⇄</button>
-          <button onClick={() => setExpanded((v) => !v)} className="opacity-50 hover:opacity-100 text-[10px] px-1">{expanded ? "▲" : "▼"}</button>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button onClick={() => { setShowMerge((v) => !v); setExpanded(true); }} title="Merge"
+            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40 transition">⇄</button>
+          <button onClick={() => setExpanded((v) => !v)}
+            className="opacity-40 hover:opacity-100 text-[10px] px-1 rounded hover:bg-white/40 transition">{expanded ? "▲" : "▼"}</button>
         </div>
       </div>
-      <div className="opacity-60 mt-0.5">{char.dialogueCount} lines · {char.sceneCount} scenes</div>
-      {char.actorName && <div className="mt-0.5 text-[10px] opacity-70">↳ {char.actorName}</div>}
+
+      <div className="opacity-50 mt-0.5 text-[10px]">{char.dialogueCount} lines · {char.sceneCount} scenes</div>
+
       {expanded && (
         <div className="mt-2 space-y-1.5 border-t border-current/10 pt-2">
-          <div><div className="text-[9px] uppercase opacity-50 mb-0.5">actor</div>
-            <EditField value={char.actorName} placeholder="actor name" onSave={(v) => onUpdate({ actorName: v })} /></div>
-          <div><div className="text-[9px] uppercase opacity-50 mb-0.5">email</div>
-            <EditField value={char.actorEmail} placeholder="email" onSave={(v) => onUpdate({ actorEmail: v })} /></div>
+          <EditField value={char.actorName} placeholder="actor name" onSave={(v) => onUpdate({ actorName: v })} />
+          <EditField value={char.actorEmail} placeholder="actor@email.com" onSave={(v) => onUpdate({ actorEmail: v })} />
           {showMerge && (
-            <div className="space-y-1 border-t border-current/10 pt-1.5">
-              <div className="text-[9px] uppercase opacity-50">merge into this character</div>
-              <div className="flex gap-1">
-                <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}
-                  className="flex-1 rounded border border-current/20 bg-white/60 px-1 py-0.5 text-[10px] outline-none">
-                  <option value="">select…</option>
-                  {allCharacters.filter((c) => c.id !== char.id).map((c) => (
-                    <option key={c.id} value={c.id}>{c.canonicalName} ({c.dialogueCount})</option>
-                  ))}
-                </select>
-                <button disabled={!mergeTarget} onClick={() => { onMerge(char.id, [mergeTarget]); setMergeTarget(""); setShowMerge(false); }}
-                  className="rounded bg-white/60 px-2 text-[10px] hover:bg-white/80 disabled:opacity-30">merge</button>
-              </div>
+            <div className="flex gap-1 pt-1 border-t border-current/10">
+              <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}
+                className="flex-1 rounded border border-current/20 bg-white/60 px-1 py-0.5 text-[10px] outline-none min-w-0">
+                <option value="">merge with…</option>
+                {allCharacters.filter((c) => c.id !== char.id).map((c) => (
+                  <option key={c.id} value={c.id}>{c.canonicalName}</option>
+                ))}
+              </select>
+              <button disabled={!mergeTarget}
+                onClick={() => { onMerge(char.id, [mergeTarget]); setMergeTarget(""); setShowMerge(false); }}
+                className="rounded bg-white/60 px-1.5 text-[10px] hover:bg-white/80 disabled:opacity-30 flex-shrink-0">⇄</button>
             </div>
           )}
         </div>
@@ -121,28 +138,30 @@ function CharacterCard({ char, colorClass, allCharacters, onUpdate, onMerge }: {
   );
 }
 
-function TeamMemberRow({ member, assigned, onToggleAssign, onUpdate, onRemove }: {
+// ─── Crew member row ──────────────────────────────────────────────────────────────────────────────────
+
+function CrewRow({ member, assigned, onToggle, onUpdate, onRemove }: {
   member: TeamMember; assigned: boolean;
-  onToggleAssign: () => void; onUpdate: (p: Partial<TeamMember>) => void; onRemove: () => void;
+  onToggle: () => void; onUpdate: (p: Partial<TeamMember>) => void; onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className={`rounded-lg border p-2 text-xs transition-colors ${assigned ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-gray-50"}`}>
       <div className="flex items-center gap-2">
-        <input type="checkbox" checked={assigned} onChange={onToggleAssign}
+        <input type="checkbox" checked={assigned} onChange={onToggle}
           className="rounded border-gray-300 text-blue-500 cursor-pointer flex-shrink-0" />
         <div className="min-w-0 flex-1">
           <span className="font-medium text-gray-800">{member.name}</span>
           <span className="ml-1.5 text-[10px] text-gray-400">{member.role}</span>
+          {member.email && <div className="text-[10px] text-gray-400 truncate">{member.email}</div>}
         </div>
-        <div className="flex gap-1 flex-shrink-0">
-          <button onClick={() => setExpanded((v) => !v)} className="text-gray-400 hover:text-gray-600 text-[10px]">{expanded ? "▲" : "▼"}</button>
-          <button onClick={onRemove} className="text-gray-300 hover:text-red-400 text-[10px] transition-colors">✕</button>
+        <div className="flex gap-0.5 flex-shrink-0">
+          <button onClick={() => setExpanded((v) => !v)} className="text-gray-300 hover:text-gray-500 text-[10px] px-1">{expanded ? "▲" : "▼"}</button>
+          <button onClick={onRemove} className="text-gray-300 hover:text-red-400 text-[10px] px-1 transition-colors">✕</button>
         </div>
       </div>
-      {member.email && <div className="text-[10px] text-gray-400 ml-5 truncate">{member.email}</div>}
       {expanded && (
-        <div className="mt-2 space-y-1 border-t border-gray-200 pt-2 ml-5">
+        <div className="mt-1.5 space-y-1 border-t border-gray-200 pt-1.5 pl-5">
           <EditField value={member.name} placeholder="name" onSave={(v) => onUpdate({ name: v })} />
           <EditField value={member.email} placeholder="email" onSave={(v) => onUpdate({ email: v })} />
           <EditField value={member.phone} placeholder="phone" onSave={(v) => onUpdate({ phone: v })} />
@@ -152,23 +171,31 @@ function TeamMemberRow({ member, assigned, onToggleAssign, onUpdate, onRemove }:
   );
 }
 
+// ─── Add crew form ────────────────────────────────────────────────────────────────────────────────
+
 function AddCrewForm({ onAdd }: { onAdd: (m: TeamMember) => void }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(""); const [role, setRole] = useState("Director");
-  const [email, setEmail] = useState(""); const [emailError, setEmailError] = useState(false);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("Director");
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState(false);
+
   function submit() {
     if (!name.trim()) return;
     if (!email.trim()) { setEmailError(true); return; }
     onAdd({ id: uid(), name: name.trim(), role, email: email.trim() });
     setName(""); setEmail(""); setEmailError(false); setOpen(false);
   }
+
   if (!open) return (
-    <button onClick={() => setOpen(true)} className="w-full rounded border border-dashed border-gray-300 py-1.5 text-[10px] text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors">
-      + add crew member
+    <button onClick={() => setOpen(true)}
+      className="w-full rounded border border-dashed border-gray-200 py-1 text-[10px] text-gray-400 hover:border-gray-300 hover:text-gray-500 transition-colors">
+      + add crew
     </button>
   );
+
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-2.5 space-y-1.5 text-xs">
+    <div className="rounded-lg border border-blue-200 bg-blue-50 p-2 space-y-1.5 text-xs">
       <input placeholder="Name *" value={name} onChange={(e) => setName(e.target.value)}
         className="w-full rounded border border-gray-300 px-2 py-1 text-xs outline-none focus:border-blue-400" />
       <select value={role} onChange={(e) => setRole(e.target.value)}
@@ -188,7 +215,9 @@ function AddCrewForm({ onAdd }: { onAdd: (m: TeamMember) => void }) {
   );
 }
 
-function ImportPeopleModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => void; onClose: () => void }) {
+// ─── Import modal ─────────────────────────────────────────────────────────────────────────────────
+
+function ImportModal({ onImport, onClose }: { onImport: (m: TeamMember[]) => void; onClose: () => void }) {
   const [json, setJson] = useState(""); const [error, setError] = useState("");
   function handle() {
     try {
@@ -207,8 +236,8 @@ function ImportPeopleModal({ onImport, onClose }: { onImport: (m: TeamMember[]) 
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
         <div className="p-4 space-y-3">
-          <p className="text-xs text-gray-500">Paste a JSON array with <code className="bg-gray-100 px-0.5 rounded">name</code>, <code className="bg-gray-100 px-0.5 rounded">role</code>, <code className="bg-gray-100 px-0.5 rounded">email</code> fields, or an object with a <code className="bg-gray-100 px-0.5 rounded">team</code> / <code className="bg-gray-100 px-0.5 rounded">crew</code> key.</p>
-          <textarea value={json} onChange={(e) => { setJson(e.target.value); setError(""); }} rows={5}
+          <p className="text-xs text-gray-500">Array with <code className="bg-gray-100 px-0.5 rounded">name</code>, <code className="bg-gray-100 px-0.5 rounded">role</code>, <code className="bg-gray-100 px-0.5 rounded">email</code> — or object with <code className="bg-gray-100 px-0.5 rounded">team</code>/<code className="bg-gray-100 px-0.5 rounded">crew</code> key.</p>
+          <textarea value={json} onChange={(e) => { setJson(e.target.value); setError(""); }} rows={4}
             placeholder={'{"name":"Alice","role":"Director","email":"a@film.com"}'}
             className="w-full rounded border border-gray-300 px-3 py-2 text-xs font-mono outline-none focus:border-blue-400 resize-none" />
           {error && <p className="text-xs text-red-500">{error}</p>}
@@ -222,26 +251,22 @@ function ImportPeopleModal({ onImport, onClose }: { onImport: (m: TeamMember[]) 
   );
 }
 
-type PanelTab = "people" | "scene" | "calendar";
+// ─── Main panel (no tabs — all sections stacked vertically) ───────────────────────────────────────────
 
 export default function SceneInfoPanel({
   scene, characters, allCharacters, location, team, film, allScenes,
   onUpdateScene, onUpdateCharacter, onMergeCharacters, onUpdateLocation,
   onAddTeamMember, onUpdateTeamMember, onRemoveTeamMember, onUpdateSceneById,
 }: Props) {
-  const [tab, setTab] = useState<PanelTab>("people");
   const [showImport, setShowImport] = useState(false);
-
   const assignedCrew = scene.assignedCrew ?? [];
 
-  function toggleCrewAssign(memberId: string) {
-    const next = assignedCrew.includes(memberId)
-      ? assignedCrew.filter((id) => id !== memberId)
-      : [...assignedCrew, memberId];
+  function toggleCrew(id: string) {
+    const next = assignedCrew.includes(id) ? assignedCrew.filter((x) => x !== id) : [...assignedCrew, id];
     onUpdateScene({ assignedCrew: next });
   }
 
-  function formatDuration(secs: number) {
+  function fmt(secs: number) {
     const m = Math.floor(secs / 60).toString().padStart(2, "0");
     const s = (secs % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
@@ -249,24 +274,17 @@ export default function SceneInfoPanel({
 
   const effectiveCallTime = scene.callTime ?? film.defaultCallTime;
 
-  const tabBtn = (t: PanelTab, label: string) => (
-    <button onClick={() => setTab(t)}
-      className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded transition-colors ${
-        tab === t ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-600"}`}>
-      {label}
-    </button>
-  );
-
   return (
-    <div className="h-full flex flex-col space-y-2">
-      {/* Scene header */}
-      <div className="flex-shrink-0">
+    <div className="h-full overflow-y-auto space-y-0 text-xs">
+
+      {/* ── Scene header ── */}
+      <div className="pb-3">
         <div className="flex gap-1 flex-wrap items-center">
           <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-bold text-gray-700">{scene.setting}</span>
           {scene.time && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">{scene.time}</span>}
-          <span className="text-[10px] text-gray-400 ml-auto">{formatDuration(scene.duration)}</span>
+          <span className="text-[10px] text-gray-400 ml-auto">{fmt(scene.duration)}</span>
         </div>
-        <div className="mt-0.5 text-xs font-medium text-gray-700 truncate">{scene.locationName}</div>
+        <div className="mt-1 font-medium text-gray-700">{scene.locationName}</div>
         {scene.shootingDate && (
           <div className="text-[10px] text-blue-500 mt-0.5">
             📅 {scene.shootingDate}{effectiveCallTime ? ` · call ${effectiveCallTime}` : ""}
@@ -274,93 +292,78 @@ export default function SceneInfoPanel({
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center justify-between flex-shrink-0 border-b border-gray-200 pb-1">
-        <div className="flex gap-1">
-          {tabBtn("people", `people (${characters.length + team.length})`)}
-          {tabBtn("scene", "scene")}
-          {tabBtn("calendar", "📅")}
+      {/* ── Cast ── */}
+      {characters.length > 0 && (
+        <div>
+          <SectionLabel label={`Cast · ${characters.length}`} />
+          <div className="space-y-1.5">
+            {characters.map((c, i) => (
+              <CharacterCard key={c.id} char={c} colorClass={CHAR_COLORS[i % CHAR_COLORS.length]}
+                allCharacters={allCharacters}
+                onUpdate={(p) => onUpdateCharacter(c.id, p)}
+                onMerge={onMergeCharacters} />
+            ))}
+          </div>
         </div>
-        {tab === "people" && (
-          <button onClick={() => setShowImport(true)} className="text-[10px] text-gray-400 hover:text-blue-500 px-1">↓ import</button>
-        )}
+      )}
+
+      {/* ── Crew ── */}
+      <div>
+        <SectionLabel
+          label={`Crew · ${team.length}`}
+          action={
+            <button onClick={() => setShowImport(true)} className="text-[9px] text-gray-400 hover:text-blue-500 transition-colors">↓ import</button>
+          }
+        />
+        <div className="space-y-1.5">
+          {team.map((m) => (
+            <CrewRow key={m.id} member={m} assigned={assignedCrew.includes(m.id)}
+              onToggle={() => toggleCrew(m.id)}
+              onUpdate={(p) => onUpdateTeamMember(m.id, p)}
+              onRemove={() => onRemoveTeamMember(m.id)} />
+          ))}
+          <AddCrewForm onAdd={onAddTeamMember} />
+        </div>
       </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto min-h-0 space-y-2">
-
-        {/* PEOPLE */}
-        {tab === "people" && (
-          <>
-            {characters.length > 0 && (
-              <>
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Cast · {characters.length}</div>
-                {characters.map((c, i) => (
-                  <CharacterCard key={c.id} char={c} colorClass={CHAR_COLORS[i % CHAR_COLORS.length]}
-                    allCharacters={allCharacters}
-                    onUpdate={(p) => onUpdateCharacter(c.id, p)}
-                    onMerge={onMergeCharacters} />
-                ))}
-                <div className="border-t border-gray-200 pt-2">
-                  <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Crew · {team.length}</div>
-                </div>
-              </>
-            )}
-            {characters.length === 0 && (
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Crew · {team.length}</div>
-            )}
-            {team.map((m) => (
-              <TeamMemberRow key={m.id} member={m} assigned={assignedCrew.includes(m.id)}
-                onToggleAssign={() => toggleCrewAssign(m.id)}
-                onUpdate={(p) => onUpdateTeamMember(m.id, p)}
-                onRemove={() => onRemoveTeamMember(m.id)} />
-            ))}
-            <AddCrewForm onAdd={onAddTeamMember} />
-          </>
-        )}
-
-        {/* SCENE */}
-        {tab === "scene" && (
-          <div className="space-y-2.5 text-xs">
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">shooting date</div>
-              <EditField value={scene.shootingDate} placeholder="YYYY-MM-DD" type="date" onSave={(v) => onUpdateScene({ shootingDate: v || undefined })} />
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">call time {!scene.callTime && film.defaultCallTime ? `(default: ${film.defaultCallTime})` : ""}</div>
-              <EditField value={scene.callTime} placeholder={film.defaultCallTime ?? "HH:MM"} type="time" onSave={(v) => onUpdateScene({ callTime: v || undefined })} />
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">location override {!scene.locationOverride ? "(using script location)" : ""}</div>
-              <EditField value={scene.locationOverride} placeholder={location?.realWorldAddress ?? film.generalLocation?.city ?? "address or location"} onSave={(v) => onUpdateScene({ locationOverride: v || undefined })} />
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">real-world address</div>
-              <EditField value={location?.realWorldAddress} placeholder="add address…" onSave={(v) => location && onUpdateLocation(location.id, { realWorldAddress: v })} />
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">duration (est.)</div>
-              <div className="px-1.5 text-gray-700">{formatDuration(scene.duration)}</div>
-            </div>
-            <div>
-              <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">notes</div>
-              <EditField value={scene.notes} placeholder="add notes…" onSave={(v) => onUpdateScene({ notes: v })} />
-            </div>
+      {/* ── Scene details ── */}
+      <div>
+        <SectionLabel label="Scene" />
+        <div className="space-y-1.5">
+          <div>
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">shooting date</div>
+            <EditField value={scene.shootingDate} placeholder="YYYY-MM-DD" type="date" onSave={(v) => onUpdateScene({ shootingDate: v || undefined })} />
           </div>
-        )}
+          <div>
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">
+              call time{!scene.callTime && film.defaultCallTime ? ` (default ${film.defaultCallTime})` : ""}
+            </div>
+            <EditField value={scene.callTime} placeholder={film.defaultCallTime ?? "HH:MM"} type="time" onSave={(v) => onUpdateScene({ callTime: v || undefined })} />
+          </div>
+          <div>
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">location</div>
+            <EditField
+              value={scene.locationOverride ?? location?.realWorldAddress}
+              placeholder={film.generalLocation?.city ?? "address or place"}
+              onSave={(v) => onUpdateScene({ locationOverride: v || undefined })}
+            />
+          </div>
+          <div>
+            <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">notes</div>
+            <EditField value={scene.notes} placeholder="add notes…" onSave={(v) => onUpdateScene({ notes: v })} />
+          </div>
+          <div className="text-[10px] text-gray-400 px-1.5">est. {fmt(scene.duration)}</div>
+        </div>
+      </div>
 
-        {/* CALENDAR */}
-        {tab === "calendar" && (
-          <ShootingCalendar
-            film={film}
-            scenes={allScenes}
-            onUpdateScene={onUpdateSceneById}
-          />
-        )}
+      {/* ── Calendar ── */}
+      <div>
+        <SectionLabel label="Schedule" />
+        <ShootingCalendar film={film} scenes={allScenes} onUpdateScene={onUpdateSceneById} />
       </div>
 
       {showImport && (
-        <ImportPeopleModal onImport={(ms) => ms.forEach(onAddTeamMember)} onClose={() => setShowImport(false)} />
+        <ImportModal onImport={(ms) => ms.forEach(onAddTeamMember)} onClose={() => setShowImport(false)} />
       )}
     </div>
   );
