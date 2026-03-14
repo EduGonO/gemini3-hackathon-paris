@@ -29,11 +29,10 @@ const STOP_WORDS = new Set([
 ]);
 
 // --- cleanCharacterName ---
-// Strips parentheticals like (V.O.), (O.S.), (CONT'D), trailing punctuation, normalizes to uppercase
 export function cleanCharacterName(raw: string): string {
   return raw
     .normalize("NFC")
-    .replace(/\s*\([^)]*\)/g, "")      // remove (V.O.), (O.S.), (CONT'D), etc.
+    .replace(/\s*\([^)]*\)/g, "")
     .replace(/[^A-Za-zÀ-ÖØ-öø-ÿ0-9'\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -41,41 +40,79 @@ export function cleanCharacterName(raw: string): string {
 }
 
 // --- isCharacterCue ---
-// A character cue must be ENTIRELY uppercase (trimmed === trimmed.toUpperCase()).
-// This is the key discriminator between character names and direction text.
 function isCharacterCue(trimmed: string): boolean {
   if (!trimmed) return false;
-
-  // CRITICAL: must be entirely uppercase — mixed case = direction text
   if (trimmed !== trimmed.toUpperCase()) return false;
-
-  // Strip parentheticals for further checks
   const cleaned = cleanCharacterName(trimmed);
   if (!cleaned) return false;
-
-  // Must not be a stop word
   if (STOP_WORDS.has(cleaned)) return false;
-
-  // Must not end with a colon (rules out "TITLE:", "NOTE:", transitions)
   if (trimmed.endsWith(":")) return false;
-
-  // Must not look like a scene heading fragment
   if (/^(INT|EXT)\.?[\s/]/.test(trimmed)) return false;
-
-  // Must not be a transition line ("CUT TO:", "FADE OUT.", etc.)
   if (/\bTO:$/.test(trimmed)) return false;
   if (/^(FADE|CUT|DISSOLVE|SMASH|MATCH|JUMP)/.test(cleaned) && cleaned.length < 30) return false;
-
-  // Must not be purely numeric or punctuation
   if (/^[\d\s.,\-–—]+$/.test(cleaned)) return false;
-
-  // Length guard — character names are short
   if (cleaned.length > 40) return false;
-
-  // Must contain at least one sequence of 2+ letters
   if (!/[A-Z]{2,}/.test(cleaned)) return false;
-
   return true;
+}
+
+// --- estimateSceneDuration ---
+// Formula:
+//   dialogue words  → 2.5 words/sec (natural speaking pace)
+//   direction words → 1.5 words/sec (visual action plays slower than prose reads)
+//   per dialogue exchange (character switch) → +0.8s pause/blocking
+//   minimum per scene → 3 seconds
+//
+// Scene type adjustments:
+//   action-heavy (few/no dialogue parts, long direction) → direction pace slows to 1.0 w/s
+//   dialogue-heavy (>70% dialogue words) → slight speed-up: dialogue at 2.8 w/s
+//   montage keyword detected → direction at 0.5 w/s (montages play fast visually)
+export function estimateSceneDuration(scene: Scene): number {
+  let dialogueWords = 0;
+  let directionWords = 0;
+  let exchanges = 0;
+  let prevChar = "";
+  let isMontage = false;
+
+  for (const part of scene.parts) {
+    const words = part.text.trim().split(/\s+/).filter(Boolean).length;
+    if (part.type === "dialogue") {
+      dialogueWords += words;
+      if (part.character !== prevChar) {
+        exchanges += 1;
+        prevChar = part.character;
+      }
+    } else {
+      directionWords += words;
+      if (/montage|quick cuts|series of shots/i.test(part.text)) {
+        isMontage = true;
+      }
+    }
+  }
+
+  const totalWords = dialogueWords + directionWords;
+  const dialogueRatio = totalWords > 0 ? dialogueWords / totalWords : 0;
+
+  // Tune pace based on scene type
+  let dialoguePace = 2.5;   // words per second
+  let directionPace = 1.5;  // words per second
+
+  if (isMontage) {
+    directionPace = 0.5;
+  } else if (dialogueRatio < 0.2 && directionWords > 20) {
+    // Action-heavy scene
+    directionPace = 1.0;
+  } else if (dialogueRatio > 0.7) {
+    // Dialogue-heavy scene
+    dialoguePace = 2.8;
+  }
+
+  const dialogueTime = dialogueWords / dialoguePace;
+  const directionTime = directionWords / directionPace;
+  const pauseTime = exchanges * 0.8;
+
+  const total = dialogueTime + directionTime + pauseTime;
+  return Math.max(3, Math.round(total));
 }
 
 // --- Gemini-powered parser (TODO) ---
@@ -113,12 +150,9 @@ export async function extractTextFromPdf(file: File): Promise<string> {
 const HEADING_REGEX =
   /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.)\s*(.*)$/i;
 
-// --- Character line regex ---
-// Matches lines that could be character cues: optionally indented, letters/numbers/spaces/apostrophes
 const CHAR_LINE_REGEX = /^\s{0,20}([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s'().-]+)$/;
 
 // --- highlightDirectionText ---
-// Returns typed segments marking known character names in direction text
 export function highlightDirectionText(
   text: string,
   knownChars: Set<string>
@@ -137,10 +171,8 @@ export function highlightDirectionText(
     if (start > lastIndex) {
       segments.push({ text: text.slice(lastIndex, start), isCharacter: false });
     }
-    const raw = match[0];
-    const cleaned = cleanCharacterName(raw);
-    segments.push({ text: raw, isCharacter: true, character: cleaned });
-    lastIndex = start + raw.length;
+    segments.push({ text: match[0], isCharacter: true, character: cleanCharacterName(match[0]) });
+    lastIndex = start + match[0].length;
   }
 
   if (lastIndex < text.length) {
@@ -182,7 +214,6 @@ export function buildCharacterStats(scenes: Scene[]): CharacterStats[] {
 }
 
 // --- parseScenesFallback ---
-// Line-by-line state machine. Strictly requires ALL-CAPS lines for character cues.
 export function parseScenesFallback(text: string): { scenes: Scene[]; characters: CharacterStats[] } {
   const scenes: Scene[] = [];
   let current: Partial<Scene> | null = null;
@@ -215,19 +246,20 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
           .map((p) => p.character)
       )
     );
-    scenes.push({
+    const sceneObj: Scene = {
       ...(current as Scene),
       parts,
       characters: chars,
       rawText: parts
         .map((p) => (p.type === "dialogue" ? `${p.character}\n${p.text}` : p.text))
         .join("\n"),
-    });
+    };
+    // Estimate duration immediately after building scene
+    sceneObj.duration = estimateSceneDuration(sceneObj);
+    scenes.push(sceneObj);
   }
 
-  const lines = text.split(/\r?\n/);
-
-  for (const rawLine of lines) {
+  for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trimEnd();
     const headingMatch = line.match(HEADING_REGEX);
 
@@ -238,7 +270,6 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
       directionLines = [];
 
       const afterSetting = headingMatch[4]?.trim() ?? "";
-      // Strip trailing scene number if present (e.g. "CAFE DE FLORE - NIGHT 12")
       const trailing = afterSetting.match(/(.*?)(\s*\d+)$/);
       const cleanedAfter = trailing ? trailing[1].trim() : afterSetting;
       const dashIdx = cleanedAfter.lastIndexOf(" - ");
@@ -259,14 +290,11 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
     if (!current) continue;
 
     const trimmed = line.trim();
-
-    // Blank line — flush dialogue if open, reset dialogue state
     if (!trimmed) {
       flushDialogue();
       continue;
     }
 
-    // Check for character cue: CHAR_LINE_REGEX match + isCharacterCue
     const charMatch = trimmed.match(CHAR_LINE_REGEX);
     if (charMatch && isCharacterCue(trimmed)) {
       flushDialogue();
@@ -278,14 +306,11 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
       continue;
     }
 
-    // If we're in a dialogue block, accumulate dialogue
     if (currentDialogue) {
       currentDialogue.lines.push(trimmed);
-      continue;
+    } else {
+      directionLines.push(trimmed);
     }
-
-    // Otherwise it's direction
-    directionLines.push(trimmed);
   }
 
   finalizeScene();

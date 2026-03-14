@@ -2,23 +2,10 @@
 
 import { useState, useCallback } from "react";
 import ScriptDisplay, { Scene, CharacterStats } from "@/components/ScriptDisplay";
-import DebugPanel from "@/components/DebugPanel";
+import DebugPanel, { DebugInfo } from "@/components/DebugPanel";
 import { parseScenesFallback } from "@/lib/parseScript";
 
 type AppState = "idle" | "loading" | "ready" | "error";
-
-interface DebugInfo {
-  fileName?: string;
-  fileSize?: number;
-  fileType?: string;
-  rawTextLength?: number;
-  rawTextPreview?: string;
-  sceneCount?: number;
-  ocrStatus?: string;
-  parseStatus?: string;
-  error?: string;
-  log: string[];
-}
 
 export default function Home() {
   const [state, setState] = useState<AppState>("idle");
@@ -34,7 +21,6 @@ export default function Home() {
     setDebug((prev) => ({ ...prev, log: [...prev.log, `${new Date().toLocaleTimeString()} ${msg}`] }));
   }
 
-  // Extract clean title from filename (strip extension)
   function titleFromFilename(filename: string): string {
     return filename.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ").trim();
   }
@@ -44,12 +30,7 @@ export default function Home() {
     setError("");
     const fileTitle = titleFromFilename(file.name);
     setTitle(fileTitle);
-    setDebug({
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type || "unknown",
-      log: [],
-    });
+    setDebug({ fileName: file.name, fileSize: file.size, fileType: file.type || "unknown", log: [] });
 
     log(`processing ${file.name}`);
 
@@ -100,17 +81,18 @@ export default function Home() {
         }));
       }
 
-      log("parsing scenes (fallback regex)...");
+      log("parsing scenes...");
       setDebug((prev) => ({ ...prev, parseStatus: "pending" }));
 
-      // TODO: swap for parseWithGemini(text) once /api/parse is ready
       const { scenes: parsedScenes, characters: parsedChars } = parseScenesFallback(text);
 
-      log(`parsed ${parsedScenes.length} scenes`);
+      log(`parsed ${parsedScenes.length} scenes, ${parsedChars.length} characters`);
       setDebug((prev) => ({
         ...prev,
         parseStatus: "ok",
         sceneCount: parsedScenes.length,
+        scenes: parsedScenes,
+        characters: parsedChars,
       }));
 
       setScenes(parsedScenes);
@@ -146,13 +128,11 @@ export default function Home() {
     <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-4">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-sm font-semibold tracking-tight text-gray-800">
-          gemini filmmaker
-        </h1>
+        <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini filmmaker</h1>
         <div className="flex gap-2">
           {state === "ready" && (
             <button
-              onClick={() => { setState("idle"); setScenes([]); setTitle(""); }}
+              onClick={() => { setState("idle"); setScenes([]); setTitle(""); setCharacters([]); }}
               className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300"
             >
               New script
@@ -161,9 +141,7 @@ export default function Home() {
           <button
             onClick={() => setShowDebug((v) => !v)}
             className={`rounded px-3 py-1 text-xs transition-colors ${
-              showDebug
-                ? "bg-gray-800 text-green-400"
-                : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+              showDebug ? "bg-gray-800 text-green-400" : "bg-gray-200 text-gray-600 hover:bg-gray-300"
             }`}
           >
             debug
@@ -213,7 +191,7 @@ export default function Home() {
         <div className="flex flex-1 min-h-0 flex-col">
           <div className="mb-2">
             <h2 className="text-lg font-semibold text-gray-900 capitalize">{title}</h2>
-            <p className="text-xs text-gray-500">{scenes.length} scenes detected</p>
+            <p className="text-xs text-gray-500">{scenes.length} scenes · {characters.length} characters</p>
           </div>
           <div className="flex-1 min-h-0">
             <ScriptDisplay scenes={scenes} characters={characters} title={title} />
@@ -222,9 +200,7 @@ export default function Home() {
       )}
 
       {/* Debug panel */}
-      {showDebug && (
-        <DebugPanel info={debug} onClose={() => setShowDebug(false)} />
-      )}
+      {showDebug && <DebugPanel info={debug} onClose={() => setShowDebug(false)} />}
     </main>
   );
 }
