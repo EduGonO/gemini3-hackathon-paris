@@ -1,19 +1,31 @@
 // types/schema.ts
 // Complete data model for the script analyzer
-// Optimised for Gemini API calls, email generation, calendar events, callsheet export
-
-// ─── Primitives ────────────────────────────────────────────────────────────────────────────
 
 export type SceneSetting = "INT" | "EXT" | "INT/EXT" | "EXT/INT" | "?";
 export type FilmFormat = "feature" | "short" | "series" | "commercial" | "unknown";
 export type TeamRole =
-  | "Director" | "Producer" | "Executive Producer"
-  | "Director of Photography" | "1st AD" | "2nd AD"
-  | "Production Designer" | "Costume Designer" | "Hair & Makeup"
-  | "Sound" | "Editor" | "VFX" | "Script Supervisor"
-  | "Location Manager" | "Casting Director" | "Other";
+  | "Director" | "Producer" | "Executive Producer" | "Line Producer" | "Production Assistant"
+  | "Director of Photography" | "Camera Operator" | "Focus Puller" | "Gaffer" | "Best Boy Electric"
+  | "Electrician" | "Sound Engineer" | "Boom Operator"
+  | "Production Designer" | "Set Decorator" | "Props"
+  | "Costume Designer" | "Wardrobe" | "Makeup Artist" | "Hair & Makeup"
+  | "1st AD" | "2nd AD" | "Script Supervisor"
+  | "Editor" | "VFX" | "Colorist"
+  | "Location Manager" | "Transportation" | "Catering" | "Cleaning Staff"
+  | "Casting Director" | "Other";
 
-// ─── Film metadata ───────────────────────────────────────────────────────────────────────────────
+// ─── Film metadata ──────────────────────────────────────────────────────────────────────────────
+
+export interface ShootingDateRange {
+  startDate: string;   // ISO date "YYYY-MM-DD"
+  endDate: string;     // ISO date "YYYY-MM-DD"
+}
+
+export interface GeneralLocation {
+  city: string;
+  address?: string;
+  coordinates?: { lat: number; lon: number };
+}
 
 export interface FilmProject {
   id: string;
@@ -22,34 +34,37 @@ export interface FilmProject {
   format: FilmFormat;
   logline?: string;
   totalScenes: number;
-  totalDuration: number;    // seconds
-  createdAt: string;        // ISO
-  updatedAt: string;        // ISO
+  totalDuration: number;        // seconds
+  // Global production settings
+  shootingDateRange?: ShootingDateRange;
+  generalLocation?: GeneralLocation;
+  defaultCallTime?: string;     // "HH:MM"
+  createdAt: string;
+  updatedAt: string;
 }
 
-// ─── Character ─────────────────────────────────────────────────────────────────────────────────
+// ─── Character ────────────────────────────────────────────────────────────────────────────────
 
 export interface Character {
-  id: string;                 // slugified canonical name, e.g. "mark"
-  canonicalName: string;      // display name, e.g. "MARK"
-  aliases: string[];          // other names that map here: ["MARKY", "MARK V.O."]
+  id: string;
+  canonicalName: string;
+  aliases: string[];
   actorName?: string;
   actorEmail?: string;
   actorPhone?: string;
   notes?: string;
-  // computed from scenes
   sceneCount: number;
   dialogueCount: number;
-  scenes: number[];           // scene numbers
+  scenes: number[];
 }
 
-// ─── Location ─────────────────────────────────────────────────────────────────────────────────
+// ─── Location ────────────────────────────────────────────────────────────────────────────────
 
 export interface Location {
-  id: string;                 // slugified
-  scriptName: string;         // as written in the script: "CAFE DE FLORE"
-  displayName?: string;       // corrected/preferred display name
-  realWorldAddress?: string;  // for Google Maps / callsheets
+  id: string;
+  scriptName: string;
+  displayName?: string;
+  realWorldAddress?: string;
   coordinates?: { lat: number; lon: number };
   notes?: string;
   sceneCount: number;
@@ -59,25 +74,27 @@ export interface Location {
 // ─── Scene ───────────────────────────────────────────────────────────────────────────────────
 
 export interface SceneData {
-  id: string;                 // e.g. "scene-1"
+  id: string;
   sceneNumber: number;
-  heading: string;            // raw heading from script
+  heading: string;
   setting: SceneSetting;
-  locationId: string;         // references Location.id
-  locationName: string;       // denormalised for display
-  time: string;               // "NIGHT", "DAY", "TARDE", etc.
-  characterIds: string[];     // references Character.id (canonical)
-  duration: number;           // seconds (estimated)
-  // Production scheduling
-  shootingDates: string[];    // ISO date strings
-  callTime?: string;          // "HH:MM"
-  wrapTime?: string;          // computed from callTime + duration
-  // Notes & corrections
+  locationId: string;
+  locationName: string;
+  time: string;
+  characterIds: string[];
+  duration: number;             // seconds
+  // Scene-specific overrides (override project defaults when set)
+  shootingDate?: string;        // "YYYY-MM-DD" — specific date for this scene
+  callTime?: string;            // "HH:MM" — overrides project defaultCallTime
+  locationOverride?: string;    // overrides generalLocation for this scene
+  assignedCrew?: string[];      // TeamMember.id[] for this scene
+  // General
+  shootingDates: string[];      // legacy multi-date support
   notes?: string;
-  geminiNotes?: string;       // AI-generated production notes
+  geminiNotes?: string;
 }
 
-// ─── Team member (crew not in script) ──────────────────────────────────────────────────────────
+// ─── Team ───────────────────────────────────────────────────────────────────────────────────
 
 export interface TeamMember {
   id: string;
@@ -101,26 +118,19 @@ export interface ProjectState {
 // ─── Reducer actions ──────────────────────────────────────────────────────────────────────────────
 
 export type ProjectAction =
-  // Load
   | { type: "LOAD_PROJECT"; project: ProjectState }
-  // Film
   | { type: "UPDATE_FILM"; patch: Partial<FilmProject> }
-  // Characters
   | { type: "UPDATE_CHARACTER"; id: string; patch: Partial<Character> }
   | { type: "MERGE_CHARACTERS"; keepId: string; mergeIds: string[] }
   | { type: "ADD_CHARACTER_ALIAS"; id: string; alias: string }
   | { type: "REMOVE_CHARACTER_ALIAS"; id: string; alias: string }
-  // Locations
   | { type: "UPDATE_LOCATION"; id: string; patch: Partial<Location> }
-  // Scenes
   | { type: "UPDATE_SCENE"; id: string; patch: Partial<SceneData> }
-  // Team
   | { type: "ADD_TEAM_MEMBER"; member: TeamMember }
   | { type: "UPDATE_TEAM_MEMBER"; id: string; patch: Partial<TeamMember> }
   | { type: "REMOVE_TEAM_MEMBER"; id: string };
 
-// ─── Callsheet export shape ──────────────────────────────────────────────────────────────────────────
-// Used for Gemini prompt context, email generation, Google Calendar events
+// ─── Callsheet export ──────────────────────────────────────────────────────────────────────────
 
 export interface CallsheetScene {
   sceneNumber: number;
@@ -129,14 +139,17 @@ export interface CallsheetScene {
   realWorldAddress?: string;
   time: string;
   duration: number;
+  shootingDate?: string;
   callTime?: string;
   cast: Array<{ character: string; actor?: string; email?: string }>;
+  crew: Array<{ name: string; role: string; email?: string }>;
   notes?: string;
 }
 
 export interface Callsheet {
   film: Pick<FilmProject, "title" | "author">;
   shootDate?: string;
+  generalLocation?: GeneralLocation;
   crew: TeamMember[];
   scenes: CallsheetScene[];
   generatedAt: string;

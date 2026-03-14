@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import ScriptDisplay, { Scene, CharacterStats } from "@/components/ScriptDisplay";
 import DebugPanel, { DebugInfo } from "@/components/DebugPanel";
 import ScriptSelector from "@/components/ScriptSelector";
+import ProjectSettings from "@/components/ProjectSettings";
 import type { ScriptMeta } from "@/components/ScriptSelector";
 import { parseScenesFallback } from "@/lib/parseScript";
 import { buildProjectFromParsed, useProjectStore } from "@/lib/scriptStore";
@@ -34,25 +35,12 @@ export default function Home() {
   async function processText(text: string, sourceName: string) {
     log(`parsing "${sourceName}"...`);
     setDebug((prev) => ({ ...prev, parseStatus: "pending" }));
-
     const { scenes: parsedScenes, characters: parsedChars, debugLog } = parseScenesFallback(text);
     const fileTitle = titleFromFilename(sourceName);
-
     log(`parsed ${parsedScenes.length} scenes, ${parsedChars.length} characters`);
-
-    // Build rich project state from parsed output
     const project = buildProjectFromParsed(parsedScenes, parsedChars, fileTitle);
     store.load(project);
-
-    setDebug((prev) => ({
-      ...prev,
-      parseStatus: "ok",
-      sceneCount: parsedScenes.length,
-      scenes: parsedScenes,
-      characters: parsedChars,
-      debugLog,
-    }));
-
+    setDebug((prev) => ({ ...prev, parseStatus: "ok", sceneCount: parsedScenes.length, scenes: parsedScenes, characters: parsedChars, debugLog }));
     setScenes(parsedScenes);
     setCharacters(parsedChars);
     setTitle(fileTitle);
@@ -65,7 +53,6 @@ export default function Home() {
     setCurrentScript(undefined);
     setDebug({ fileName: file.name, fileSize: file.size, fileType: file.type || "unknown", log: [] });
     log(`processing ${file.name}`);
-
     try {
       let text = "";
       if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
@@ -104,7 +91,7 @@ export default function Home() {
     setError("");
     setCurrentScript(script.name);
     setDebug({ fileName: script.filename, fileType: "demo script", log: [] });
-    log(`loading demo script: ${script.filename}`);
+    log(`loading demo: ${script.filename}`);
     try {
       const res = await fetch(script.path);
       if (!res.ok) throw new Error(`Failed to fetch ${script.path}: ${res.status}`);
@@ -113,7 +100,7 @@ export default function Home() {
       setDebug((prev) => ({ ...prev, fileSize: blob.size }));
       let text = "";
       if (script.filename.endsWith(".pdf")) {
-        log("running OCR on demo PDF...");
+        log("running OCR...");
         setDebug((prev) => ({ ...prev, ocrStatus: "pending" }));
         const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -125,7 +112,7 @@ export default function Home() {
         if (!ocrRes.ok) throw new Error(`OCR failed: ${ocrRes.status}`);
         const data = await ocrRes.json();
         text = data.text ?? "";
-        log(`OCR ok — ${text.length} chars, ${data.pages} pages`);
+        log(`OCR ok — ${text.length} chars`);
         setDebug((prev) => ({ ...prev, ocrStatus: "ok", rawTextLength: text.length, rawTextPreview: text.slice(0, 400) }));
       } else {
         text = await blob.text();
@@ -156,13 +143,20 @@ export default function Home() {
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-gray-50 px-4 py-4">
       {/* Header */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-2 flex items-center justify-between">
         <h1 className="text-sm font-semibold tracking-tight text-gray-800">gemini3 hackathon paris - edu</h1>
         <div className="flex items-center gap-2">
           <ScriptSelector onLoad={loadDemoScript} currentScript={currentScript} />
           {appState === "ready" && (
-            <button onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); }}
-              className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300">new script</button>
+            <>
+              <button
+                onClick={store.exportJSON}
+                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300"
+                title="Export project as JSON"
+              >↓ JSON</button>
+              <button onClick={() => { setAppState("idle"); setScenes([]); setTitle(""); setCharacters([]); setCurrentScript(undefined); }}
+                className="rounded bg-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-300">new script</button>
+            </>
           )}
           <button onClick={() => setShowDebug((v) => !v)}
             className={`rounded px-3 py-1 text-xs transition-colors ${showDebug ? "bg-gray-800 text-green-400" : "bg-gray-200 text-gray-600 hover:bg-gray-300"}`}>
@@ -171,6 +165,7 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Upload */}
       {(appState === "idle" || appState === "error") && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4">
           <h2 className="text-2xl font-light text-gray-800">Upload a screenplay</h2>
@@ -199,10 +194,8 @@ export default function Home() {
 
       {appState === "ready" && scenes.length > 0 && (
         <div className="flex flex-1 min-h-0 flex-col">
-          <div className="mb-2">
-            <h2 className="text-lg font-semibold text-gray-900 capitalize">{title}</h2>
-            <p className="text-xs text-gray-500">{scenes.length} scenes · {store.project.characters.length} characters · {store.project.locations.length} locations</p>
-          </div>
+          {/* Project settings bar */}
+          <ProjectSettings film={store.project.film} onUpdate={store.updateFilm} />
           <div className="flex-1 min-h-0">
             <ScriptDisplay
               scenes={scenes}
