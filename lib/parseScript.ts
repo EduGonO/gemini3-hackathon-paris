@@ -12,25 +12,73 @@ export interface ParseResult {
   characters: CharacterStats[];
 }
 
-// --- Stop words — never treated as character names ---
+export interface ParseDebugEntry {
+  lineNumber: number;
+  line: string;
+  matched: "structural" | "fuzzy" | null;
+  setting?: string;
+  location?: string;
+  time?: string;
+}
+
+// --- Time-of-day markers (multi-language) ---
+// Used for fuzzy scene heading detection and time extraction
+const TIME_MARKERS: string[] = [
+  // English
+  "DAY", "NIGHT", "MORNING", "AFTERNOON", "EVENING",
+  "DAWN", "DUSK", "SUNSET", "SUNRISE", "MIDNIGHT", "NOON",
+  "CONTINUOUS", "CONT.", "LATER", "MOMENTS LATER", "SAME TIME",
+  "EARLIER", "GOLDEN HOUR", "MAGIC HOUR", "PRE-DAWN",
+  // Spanish
+  "DÍA", "DIA", "NOCHE", "TARDE", "MAÑANA", "MANANA",
+  "MADRUGADA", "CONTINUO", "CONTINUA",
+  "ANOCHECER", "AMANECER", "ATARDECER",
+  "MÁS TARDE", "MAS TARDE",
+  "MOMENTOS DESPUÉS", "MOMENTOS DESPUES",
+  "MISMO TIEMPO", "INSTANTES DESPUÉS",
+  // French
+  "JOUR", "NUIT", "MATIN", "SOIR", "APRÈS-MIDI", "APRES-MIDI",
+  "CONTINU", "CONTINUE", "AUBE", "CRÉPUSCULE", "CREPUSCULE",
+  "PLUS TARD", "EN CONTINU",
+  // Portuguese
+  "DIA", "NOITE", "MANHÃ", "MANHA", "TARDE", "ENTARDECER",
+  "CONTÍNUO", "CONTINUO",
+];
+
+// Sort longest first so multi-word markers match before single words
+const TIME_MARKERS_SORTED = [...TIME_MARKERS].sort((a, b) => b.length - a.length);
+
+// Build a regex that matches any time marker at or near the end of a line
+// Handles separators: " - ", " -- ", " / ", or just trailing after last separator
+const TIME_MARKER_REGEX = new RegExp(
+  `(?:[-–—/\\s]+|^)(${TIME_MARKERS_SORTED.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\s*$`,
+  "i"
+);
+
+// --- INT/EXT structural pattern ---
+// Matches all common INT/EXT variants (with period, dash, slash, or bare),
+// including French/Spanish INTÉRIEUR/EXTÉRIEUR
+const INT_EXT_REGEX =
+  /^[\s\d.]*\b(INT\.\/EXT\.|EXT\.\/INT\.|I\.?\/E\.?|E\.?\/I\.?|INT\.?|EXT\.?|INTÉRIEUR|EXTÉRIEUR|INTERIOR|EXTERIOR)\b\s*[-./]?\s*/i;
+
+// --- Stop words ---
 const STOP_WORDS = new Set([
   "INT", "EXT", "INT/EXT", "EXT/INT",
   "CUT", "CUT TO", "SMASH CUT", "MATCH CUT", "JUMP CUT",
   "FADE", "FADE IN", "FADE OUT", "FADE TO", "DISSOLVE", "DISSOLVE TO",
   "TITLE", "TITLES", "SUPER", "SUBTITLE", "CAPTION",
-  "MAIN TITLE", "MAIN TITLES", "ROLL", "ROLL MAIN TITLE", "ROLL TITLES",
-  "THE", "END", "CONTINUED", "CONT", "MORE", "ALL",
+  "ALL", "THE", "END", "CONTINUED", "CONT", "MORE",
   "DAY", "NIGHT", "DUSK", "DAWN", "MORNING", "EVENING", "LATER",
   "CONTINUOUS", "MOMENTS LATER", "SIMULTANEOUSLY",
   "INTERCUT", "INTERCUT WITH",
   "POV", "INSERT", "BACK TO SCENE", "BACK TO",
-  "SCENE", "SERIES OF SHOTS",
   "OVER", "OVER BLACK", "BLACK",
-  "WE SEE", "WE HEAR",
-  "CLOSE ON", "CLOSE UP", "WIDE ON", "PULL BACK", "PUSH IN",
-  "ANGLE ON", "NEW ANGLE", "ANOTHER ANGLE", "SAME",
   "A", "AN", "AND", "OR", "TO", "IN", "ON", "AT", "BY",
   "INT.", "EXT.", "V.O.", "O.S.", "O.C.",
+  "ROLL", "ROLL MAIN TITLE", "MAIN TITLE", "MAIN TITLES", "ROLL TITLES",
+  "SCENE", "SERIES OF SHOTS", "WE SEE", "WE HEAR", "SAME",
+  "CLOSE ON", "CLOSE UP", "WIDE ON", "PULL BACK", "PUSH IN",
+  "ANGLE ON", "NEW ANGLE", "ANOTHER ANGLE",
 ]);
 
 // --- cleanCharacterName ---
@@ -44,6 +92,95 @@ export function cleanCharacterName(raw: string): string {
     .toUpperCase();
 }
 
+// --- detectSceneHeading ---
+// Two-pass fuzzy detector. Returns null if line is not a scene heading.
+export function detectSceneHeading(line: string): {
+  setting: string;
+  location: string;
+  time: string;
+  matched: "structural" | "fuzzy";
+} | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  // Normalise for matching (NFC, remove soft hyphens)
+  const normalised = trimmed.normalize("NFC");
+
+  // --- Pass 1: Structural match (starts with INT/EXT variant) ---
+  const structMatch = normalised.match(INT_EXT_REGEX);
+  if (structMatch) {
+    const setting = structMatch[1].replace(/\.$/, "").trim().toUpperCase();
+    const rest = normalised.slice(structMatch[0].length).trim();
+    const { location, time } = extractLocationTime(rest);
+    return { setting, location, time, matched: "structural" };
+  }
+
+  // --- Pass 2: Fuzzy match (all-caps line that contains a time marker) ---
+  // Must be entirely uppercase (character names are also all-caps, but they're short and
+  // handled separately; scene headings tend to be longer with location text)
+  if (normalised !== normalised.toUpperCase()) return null;
+  if (normalised.length < 5) return null;
+
+  // Must contain a time marker
+  const timeMatch = normalised.match(TIME_MARKER_REGEX);
+  if (!timeMatch) return null;
+
+  // Must not be a stop word or character cue shape
+  const cleaned = cleanCharacterName(normalised);
+  if (STOP_WORDS.has(cleaned)) return null;
+  if (normalised.endsWith(":")) return null;
+  // Fuzzy headings should have some location content (not just a time marker alone)
+  const timeStr = timeMatch[1].trim().toUpperCase();
+  const beforeTime = normalised.slice(0, timeMatch.index).trim();
+  if (!beforeTime || beforeTime.length < 2) return null;
+
+  const { location, time } = extractLocationTime(normalised);
+  return { setting: "?", location, time, matched: "fuzzy" };
+}
+
+// --- extractLocationTime ---
+// Extracts location and time from the remainder of a heading after the INT/EXT prefix,
+// or from a full fuzzy-matched heading line.
+// Separator priority: " -- " > " - " > time marker at end
+function extractLocationTime(text: string): { location: string; time: string } {
+  // Strip trailing scene numbers
+  const cleaned = text.replace(/\s*\d+\s*$/, "").trim();
+
+  // Try double-dash separator (Spanish: "SALA - TEPEJI 21 -- TARDE")
+  const doubleDash = cleaned.lastIndexOf(" -- ");
+  if (doubleDash !== -1) {
+    return {
+      location: cleaned.slice(0, doubleDash).trim(),
+      time: cleaned.slice(doubleDash + 4).trim(),
+    };
+  }
+
+  // Try time marker regex match at end
+  const timeMatch = cleaned.match(TIME_MARKER_REGEX);
+  if (timeMatch && timeMatch.index !== undefined) {
+    const separator = cleaned.slice(timeMatch.index, timeMatch.index + (cleaned.length - cleaned.trimStart().length + timeMatch.index));
+    const timePart = timeMatch[1].trim();
+    // Find where the time marker starts (accounting for separator)
+    const markerStart = cleaned.lastIndexOf(timePart);
+    if (markerStart > 0) {
+      const loc = cleaned.slice(0, markerStart).replace(/[\s\-–—/]+$/, "").trim();
+      if (loc) return { location: loc, time: timePart };
+    }
+  }
+
+  // Try single-dash separator as fallback
+  const singleDash = cleaned.lastIndexOf(" - ");
+  if (singleDash !== -1) {
+    return {
+      location: cleaned.slice(0, singleDash).trim(),
+      time: cleaned.slice(singleDash + 3).trim(),
+    };
+  }
+
+  // No separator found — entire text is location
+  return { location: cleaned, time: "" };
+}
+
 // --- isCharacterCue ---
 function isCharacterCue(trimmed: string): boolean {
   if (!trimmed) return false;
@@ -52,26 +189,18 @@ function isCharacterCue(trimmed: string): boolean {
   if (!cleaned) return false;
   if (STOP_WORDS.has(cleaned)) return false;
   if (trimmed.endsWith(":")) return false;
-  if (/^(INT|EXT)\.?[\s/]/.test(trimmed)) return false;
+  if (/^(INT|EXT)\.?[\s/\-]/.test(trimmed)) return false;
   if (/\bTO:$/.test(trimmed)) return false;
   if (/^(FADE|CUT|DISSOLVE|SMASH|MATCH|JUMP)/.test(cleaned) && cleaned.length < 30) return false;
   if (/^[\d\s.,\-–—]+$/.test(cleaned)) return false;
   if (cleaned.length > 40) return false;
   if (!/[A-Z]{2,}/.test(cleaned)) return false;
+  // Extra guard: if detectSceneHeading thinks this is a heading, it's not a character
+  if (detectSceneHeading(trimmed) !== null) return false;
   return true;
 }
 
 // --- estimateSceneDuration ---
-// Formula:
-//   dialogue words  → 2.5 words/sec (natural speaking pace)
-//   direction words → 1.5 words/sec (visual action plays slower than prose reads)
-//   per dialogue exchange (character switch) → +0.8s pause/blocking
-//   minimum per scene → 3 seconds
-//
-// Scene type adjustments:
-//   action-heavy (few/no dialogue parts, long direction) → direction pace slows to 1.0 w/s
-//   dialogue-heavy (>70% dialogue words) → slight speed-up: dialogue at 2.8 w/s
-//   montage keyword detected → direction at 0.5 w/s (montages play fast visually)
 export function estimateSceneDuration(scene: Scene): number {
   let dialogueWords = 0;
   let directionWords = 0;
@@ -83,41 +212,27 @@ export function estimateSceneDuration(scene: Scene): number {
     const words = part.text.trim().split(/\s+/).filter(Boolean).length;
     if (part.type === "dialogue") {
       dialogueWords += words;
-      if (part.character !== prevChar) {
-        exchanges += 1;
-        prevChar = part.character;
-      }
+      if (part.character !== prevChar) { exchanges += 1; prevChar = part.character; }
     } else {
       directionWords += words;
-      if (/montage|quick cuts|series of shots/i.test(part.text)) {
-        isMontage = true;
-      }
+      if (/montage|quick cuts|series of shots/i.test(part.text)) isMontage = true;
     }
   }
 
   const totalWords = dialogueWords + directionWords;
   const dialogueRatio = totalWords > 0 ? dialogueWords / totalWords : 0;
 
-  // Tune pace based on scene type
-  let dialoguePace = 2.5;   // words per second
-  let directionPace = 1.5;  // words per second
+  let dialoguePace = 2.5;
+  let directionPace = 1.5;
+  if (isMontage) directionPace = 0.5;
+  else if (dialogueRatio < 0.2 && directionWords > 20) directionPace = 1.0;
+  else if (dialogueRatio > 0.7) dialoguePace = 2.8;
 
-  if (isMontage) {
-    directionPace = 0.5;
-  } else if (dialogueRatio < 0.2 && directionWords > 20) {
-    // Action-heavy scene
-    directionPace = 1.0;
-  } else if (dialogueRatio > 0.7) {
-    // Dialogue-heavy scene
-    dialoguePace = 2.8;
-  }
-
-  const dialogueTime = dialogueWords / dialoguePace;
-  const directionTime = directionWords / directionPace;
-  const pauseTime = exchanges * 0.8;
-
-  const total = dialogueTime + directionTime + pauseTime;
-  return Math.max(3, Math.round(total));
+  return Math.max(3, Math.round(
+    dialogueWords / dialoguePace +
+    directionWords / directionPace +
+    exchanges * 0.8
+  ));
 }
 
 // --- Gemini-powered parser (TODO) ---
@@ -151,12 +266,7 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   });
 }
 
-// --- Heading regex ---
-// Supports standard (INT./EXT.) and Spanish (INT - / EXT - ) formats.
-// Lookahead (?=[\s\-/]) prevents false matches on words like "INTERIOR".
-const HEADING_REGEX =
-  /^(\s*)(\d+\.?\s*)?(INT\.\/EXT\.|EXT\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.|INT(?=[\s\-/])|EXT(?=[\s\-/]))\s*[-.]?\s*(.*)$/i;
-
+// --- Character line regex ---
 const CHAR_LINE_REGEX = /^\s{0,20}([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9\s'().-]+)$/;
 
 // --- highlightDirectionText ---
@@ -175,17 +285,12 @@ export function highlightDirectionText(
 
   for (const match of text.matchAll(pattern)) {
     const start = match.index!;
-    if (start > lastIndex) {
-      segments.push({ text: text.slice(lastIndex, start), isCharacter: false });
-    }
+    if (start > lastIndex) segments.push({ text: text.slice(lastIndex, start), isCharacter: false });
     segments.push({ text: match[0], isCharacter: true, character: cleanCharacterName(match[0]) });
     lastIndex = start + match[0].length;
   }
 
-  if (lastIndex < text.length) {
-    segments.push({ text: text.slice(lastIndex), isCharacter: false });
-  }
-
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex), isCharacter: false });
   return segments.length > 0 ? segments : [{ text, isCharacter: false }];
 }
 
@@ -201,10 +306,7 @@ export function buildCharacterStats(scenes: Scene[]): CharacterStats[] {
         if (!map.has(name)) map.set(name, { dialogueCount: 0, scenes: new Set() });
         const entry = map.get(name)!;
         entry.dialogueCount += 1;
-        if (!seenInScene.has(name)) {
-          seenInScene.add(name);
-          entry.scenes.add(scene.sceneNumber);
-        }
+        if (!seenInScene.has(name)) { seenInScene.add(name); entry.scenes.add(scene.sceneNumber); }
       }
     }
   }
@@ -221,8 +323,13 @@ export function buildCharacterStats(scenes: Scene[]): CharacterStats[] {
 }
 
 // --- parseScenesFallback ---
-export function parseScenesFallback(text: string): { scenes: Scene[]; characters: CharacterStats[] } {
+export function parseScenesFallback(text: string): {
+  scenes: Scene[];
+  characters: CharacterStats[];
+  debugLog: ParseDebugEntry[];
+} {
   const scenes: Scene[] = [];
+  const debugLog: ParseDebugEntry[] = [];
   let current: Partial<Scene> | null = null;
   let parts: ScenePart[] = [];
   let currentDialogue: { character: string; lines: string[] } | null = null;
@@ -246,81 +353,67 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
     if (!current) return;
     flushDialogue();
     flushDirection();
-    const chars = Array.from(
-      new Set(
-        parts
-          .filter((p): p is Extract<ScenePart, { type: "dialogue" }> => p.type === "dialogue")
-          .map((p) => p.character)
-      )
-    );
+    const chars = Array.from(new Set(
+      parts
+        .filter((p): p is Extract<ScenePart, { type: "dialogue" }> => p.type === "dialogue")
+        .map((p) => p.character)
+    ));
     const sceneObj: Scene = {
       ...(current as Scene),
       parts,
       characters: chars,
-      rawText: parts
-        .map((p) => (p.type === "dialogue" ? `${p.character}\n${p.text}` : p.text))
-        .join("\n"),
+      rawText: parts.map((p) => p.type === "dialogue" ? `${p.character}\n${p.text}` : p.text).join("\n"),
     };
-    // Estimate duration immediately after building scene
     sceneObj.duration = estimateSceneDuration(sceneObj);
     scenes.push(sceneObj);
   }
 
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trimEnd();
-    const headingMatch = line.match(HEADING_REGEX);
+  const lines = text.split(/\r?\n/);
 
-    if (headingMatch) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+    const trimmed = line.trim();
+
+    // --- Scene heading detection (fuzzy) ---
+    const headingInfo = detectSceneHeading(line);
+
+    if (headingInfo) {
       finalizeScene();
       parts = [];
       currentDialogue = null;
       directionLines = [];
 
-      const afterSetting = headingMatch[4]?.trim() ?? "";
-      // Strip trailing scene number if present (e.g. "CAFE - NIGHT 12")
-      const trailing = afterSetting.match(/(.*?)(\s*\d+)$/);
-      const cleanedAfter = trailing ? trailing[1].trim() : afterSetting;
+      const { setting, location, time, matched } = headingInfo;
 
-      // Spanish format uses " -- " to separate location from time (e.g. "SALA - TEPEJI 21 -- TARDE")
-      // Standard format uses " - " (e.g. "CAFE DE FLORE - NIGHT")
-      // Try double-dash first, then single-dash
-      let location = cleanedAfter;
-      let time = "";
-      const doubleDashIdx = cleanedAfter.lastIndexOf(" -- ");
-      const singleDashIdx = cleanedAfter.lastIndexOf(" - ");
+      debugLog.push({
+        lineNumber: i + 1,
+        line: trimmed,
+        matched,
+        setting,
+        location,
+        time,
+      });
 
-      if (doubleDashIdx !== -1) {
-        // Spanish: "SALA - TEPEJI 21 -- TARDE" → location="SALA - TEPEJI 21", time="TARDE"
-        location = cleanedAfter.slice(0, doubleDashIdx).trim();
-        time = cleanedAfter.slice(doubleDashIdx + 4).trim();
-      } else if (singleDashIdx !== -1) {
-        // Standard: "CAFE DE FLORE - NIGHT" → location="CAFE DE FLORE", time="NIGHT"
-        location = cleanedAfter.slice(0, singleDashIdx).trim();
-        time = cleanedAfter.slice(singleDashIdx + 3).trim();
+      if (process.env.NODE_ENV === "development") {
+        console.log(
+          `[parseScript] ${matched} heading #${scenes.length + 1} (line ${i + 1}): ` +
+          `setting="${setting}" location="${location}" time="${time}" | "${trimmed}"`
+        );
       }
-
-      // Normalize setting — strip leading dash/space that Spanish format may leave
-      const rawSetting = headingMatch[3].replace(/\.$/, "").trim().toUpperCase();
 
       current = {
         sceneNumber: scenes.length + 1,
-        heading: `${rawSetting} ${cleanedAfter}`.trim(),
-        setting: rawSetting,
+        heading: trimmed,
+        setting,
         location,
         time,
         duration: undefined,
       };
-
-      if (process.env.NODE_ENV === "development") {
-        console.log(`[parseScript] scene ${scenes.length + 1}: setting="${rawSetting}" location="${location}" time="${time}"`);
-      }
-
       continue;
     }
 
     if (!current) continue;
 
-    const trimmed = line.trim();
     if (!trimmed) {
       flushDialogue();
       continue;
@@ -331,9 +424,7 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
       flushDialogue();
       flushDirection();
       const name = cleanCharacterName(charMatch[1].trim());
-      if (name) {
-        currentDialogue = { character: name, lines: [] };
-      }
+      if (name) currentDialogue = { character: name, lines: [] };
       continue;
     }
 
@@ -347,5 +438,5 @@ export function parseScenesFallback(text: string): { scenes: Scene[]; characters
   finalizeScene();
 
   const characters = buildCharacterStats(scenes);
-  return { scenes, characters };
+  return { scenes, characters, debugLog };
 }
